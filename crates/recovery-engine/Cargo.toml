@@ -1,0 +1,8 @@
+[package]
+name = "locardx-recovery-engine"
+version.workspace = true
+edition.workspace = true
+description = "LocardX forensic file carving and recovery engine"
+
+[dependencies]
+locardx-common = { path = "../common" }

@@ -1,0 +1,8 @@
+[package]
+name = "locardx-file-eraser"
+version.workspace = true
+edition.workspace = true
+description = "LocardX surgical file, folder, and metadata sanitization engine"
+
+[dependencies]
+locardx-common = { path = "../common" }

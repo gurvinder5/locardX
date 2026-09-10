@@ -1,0 +1,12 @@
+{
+  "name": "locardx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LocardX desktop forensic recovery and secure data sanitization platform",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

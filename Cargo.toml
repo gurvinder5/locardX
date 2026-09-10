@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/audit",
+    "crates/auth",
+    "crates/common",
+    "crates/database",
+    "crates/device-manager",
+    "crates/drive-eraser",
+    "crates/file-eraser",
+    "crates/operation-manager",
+    "crates/recovery-engine",
+    "crates/reporting",
+    "crates/security",
+    "crates/verification",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["LocardX Contributors"]
+repository = "https://github.com/gurvinder5/locardX"

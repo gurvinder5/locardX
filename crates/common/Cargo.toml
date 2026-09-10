@@ -1,0 +1,7 @@
+[package]
+name = "locardx-common"
+version.workspace = true
+edition.workspace = true
+description = "LocardX common types, error handling, and utilities"
+
+[dependencies]

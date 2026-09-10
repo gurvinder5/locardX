@@ -1,0 +1,8 @@
+[package]
+name = "locardx-auth"
+version.workspace = true
+edition.workspace = true
+description = "LocardX user authentication, roles, and session management"
+
+[dependencies]
+locardx-common = { path = "../common" }

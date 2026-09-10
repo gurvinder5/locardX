@@ -1,0 +1,8 @@
+[package]
+name = "locardx-reporting"
+version.workspace = true
+edition.workspace = true
+description = "LocardX forensic, audit, and sanitization report generation"
+
+[dependencies]
+locardx-common = { path = "../common" }

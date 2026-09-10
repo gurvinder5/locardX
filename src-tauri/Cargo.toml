@@ -1,0 +1,8 @@
+[package]
+name = "locardx-desktop"
+version.workspace = true
+edition.workspace = true
+description = "LocardX Tauri desktop application shell"
+
+[dependencies]
+locardx-common = { path = "../crates/common" }

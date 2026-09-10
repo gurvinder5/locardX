@@ -1,0 +1,8 @@
+[package]
+name = "locardx-security"
+version.workspace = true
+edition.workspace = true
+description = "LocardX security primitives, destructive operation interlocks, and integrity checks"
+
+[dependencies]
+locardx-common = { path = "../common" }

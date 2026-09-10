@@ -1,0 +1,8 @@
+[package]
+name = "locardx-device-manager"
+version.workspace = true
+edition.workspace = true
+description = "LocardX OS block device enumeration and geometry detection"
+
+[dependencies]
+locardx-common = { path = "../common" }

@@ -1,0 +1,8 @@
+[package]
+name = "locardx-audit"
+version.workspace = true
+edition.workspace = true
+description = "LocardX tamper-evident audit logging and hash-chain integrity"
+
+[dependencies]
+locardx-common = { path = "../common" }
