@@ -5,4 +5,6 @@ edition.workspace = true
 description = "LocardX SQLite persistence and migrations layer"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }

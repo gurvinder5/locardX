@@ -5,4 +5,16 @@ edition.workspace = true
 description = "LocardX security primitives, destructive operation interlocks, and integrity checks"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-auth = { workspace = true }
+locardx-device-manager = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

@@ -5,4 +5,21 @@ edition.workspace = true
 description = "LocardX multi-pass pattern verification and cryptographic integrity verification"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-device-manager = { workspace = true }
+locardx-security = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+locardx-auth = { workspace = true }
+locardx-operation-manager = { workspace = true }
+tokio = { workspace = true }

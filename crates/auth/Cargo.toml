@@ -2,7 +2,18 @@
 name = "locardx-auth"
 version.workspace = true
 edition.workspace = true
-description = "LocardX user authentication, roles, and session management"
+description = "LocardX closed authentication, user management, and session control"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+argon2 = { workspace = true }
+password-hash = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { workspace = true }

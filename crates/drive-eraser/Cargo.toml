@@ -2,7 +2,27 @@
 name = "locardx-drive-eraser"
 version.workspace = true
 edition.workspace = true
-description = "LocardX whole-disk sanitization and overwrite engine"
+description = "LocardX physical storage device sanitization, capability detection, and simulation engine"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-device-manager = { workspace = true }
+locardx-security = { workspace = true }
+locardx-verification = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+locardx-auth = { workspace = true }
+locardx-reporting = { workspace = true }
+locardx-operation-manager = { workspace = true }

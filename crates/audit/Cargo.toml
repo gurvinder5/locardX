@@ -5,4 +5,12 @@ edition.workspace = true
 description = "LocardX tamper-evident audit logging and hash-chain integrity"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+rusqlite = { workspace = true }

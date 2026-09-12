@@ -5,4 +5,23 @@ edition.workspace = true
 description = "LocardX Tauri desktop application shell"
 
 [dependencies]
-locardx-common = { path = "../crates/common" }
+tauri = { workspace = true }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-auth = { workspace = true }
+locardx-device-manager = { workspace = true }
+locardx-verification = { workspace = true }
+locardx-operation-manager = { workspace = true }
+locardx-security = { workspace = true }
+locardx-file-eraser = { workspace = true }
+locardx-drive-eraser = { workspace = true }
+locardx-reporting = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+
+[build-dependencies]
+tauri-build = { workspace = true }

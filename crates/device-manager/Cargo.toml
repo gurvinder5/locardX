@@ -5,4 +5,7 @@ edition.workspace = true
 description = "LocardX OS block device enumeration and geometry detection"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

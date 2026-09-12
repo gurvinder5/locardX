@@ -6,3 +6,16 @@ description = "LocardX forensic, audit, and sanitization report generation"
 
 [dependencies]
 locardx-common = { path = "../common" }
+locardx-audit = { path = "../audit" }
+locardx-database = { path = "../database" }
+locardx-drive-eraser = { path = "../drive-eraser" }
+locardx-device-manager = { path = "../device-manager" }
+locardx-verification = { path = "../verification" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }

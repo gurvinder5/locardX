@@ -21,3 +21,35 @@ version = "0.1.0"
 edition = "2021"
 authors = ["LocardX Contributors"]
 repository = "https://github.com/gurvinder5/locardX"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.38", features = ["full"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1.0"
+argon2 = "0.5"
+password-hash = "0.5"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+sha2 = "0.10"
+hex = "0.4"
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+
+# Internal Workspace Crates
+locardx-common = { path = "crates/common" }
+locardx-database = { path = "crates/database" }
+locardx-audit = { path = "crates/audit" }
+locardx-auth = { path = "crates/auth" }
+locardx-device-manager = { path = "crates/device-manager" }
+locardx-operation-manager = { path = "crates/operation-manager" }
+locardx-verification = { path = "crates/verification" }
+locardx-reporting = { path = "crates/reporting" }
+locardx-security = { path = "crates/security" }
+locardx-drive-eraser = { path = "crates/drive-eraser" }
+locardx-file-eraser = { path = "crates/file-eraser" }
+locardx-recovery-engine = { path = "crates/recovery-engine" }

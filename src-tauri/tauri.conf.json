@@ -4,14 +4,15 @@
   "version": "0.1.0",
   "identifier": "com.locardx.app",
   "build": {
-    "beforeDevCommand": "npm run dev --prefix ../frontend",
+    "beforeDevCommand": "npm run dev --prefix frontend",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build --prefix ../frontend",
+    "beforeBuildCommand": "npm run build --prefix frontend",
     "frontendDist": "../frontend/dist"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "LocardX - Forensic Recovery & Data Sanitization",
         "width": 1280,
         "height": 800,
