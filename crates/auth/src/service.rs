@@ -1,7 +1,8 @@
 use crate::authorization::AuthorizationEngine;
 use crate::models::{
-    AuthSessionResponse, ChangePasswordRequest, CreateUserRequest, InitAdminRequest, LoginRequest,
-    PublicUser, Session, User, UserRole,
+    AuthSessionResponse, ChangePasswordRequest, ChangeUserRoleRequest, CreateUserRequest,
+    InitAdminRequest, LoginRequest, Permission, PublicUser, Session, SessionValidationResponse,
+    UnlockUserRequest, UpdateUserRequest, User, UserRole,
 };
 use crate::password::{hash_password, verify_password};
 use crate::session::{calculate_expiration, generate_session_token, is_expired};
@@ -14,6 +15,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+/// Maximum failed login attempts before temporary account lockout.
+pub const MAX_FAILED_LOGIN_ATTEMPTS: i64 = 5;
+
+/// Duration in seconds of temporary account lockout (5 minutes).
+pub const LOCKOUT_DURATION_SECONDS: i64 = 300;
 
 /// Core authentication and user management service.
 /// Enforces closed registration, secure hashing, and role authorization.
@@ -67,25 +74,32 @@ impl AuthService {
             username: username.to_string(),
             password_hash: pwd_hash,
             role: UserRole::Administrator,
+            display_name: req
+                .display_name
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             enabled: true,
             created_at: now.clone(),
             updated_at: now.clone(),
             last_login_at: None,
+            metadata_json: "{}".to_string(),
         };
 
         self.db.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO users (user_id, username, password_hash, role, enabled, created_at, updated_at, last_login_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO users (user_id, username, password_hash, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     user.user_id,
                     user.username,
                     user.password_hash,
                     user.role.to_string(),
+                    user.display_name,
                     if user.enabled { 1 } else { 0 },
                     user.created_at,
                     user.updated_at,
-                    user.last_login_at
+                    user.last_login_at,
+                    user.metadata_json
                 ],
             )?;
             Ok(())
@@ -139,24 +153,26 @@ impl AuthService {
         // 2. Query user record
         let maybe_user: Option<User> = self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT user_id, username, password_hash, role, enabled, created_at, updated_at, last_login_at
+                "SELECT user_id, username, password_hash, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json
                  FROM users WHERE username = ?1",
             )?;
             let mut rows = stmt.query(params![username])?;
             if let Some(row) = rows.next()? {
                 let role_str: String = row.get(3)?;
                 let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Viewer);
-                let enabled_num: i64 = row.get(4)?;
+                let enabled_num: i64 = row.get(5)?;
 
                 Ok(Some(User {
                     user_id: row.get(0)?,
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
                     role,
+                    display_name: row.get(4)?,
                     enabled: enabled_num != 0,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                    last_login_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    last_login_at: row.get(8)?,
+                    metadata_json: row.get(9).unwrap_or_else(|_| "{}".to_string()),
                 }))
             } else {
                 Ok(None)
@@ -236,10 +252,16 @@ impl AuthService {
         let mut pub_user = PublicUser::from(&user);
         pub_user.last_login_at = Some(now_str);
 
+        let permissions = AuthorizationEngine::get_permissions_for_role(user.role)
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect();
+
         Ok(AuthSessionResponse {
             token,
             user: pub_user,
             expires_at,
+            permissions,
         })
     }
 
@@ -317,24 +339,26 @@ impl AuthService {
 
         let user: Option<User> = self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT user_id, username, password_hash, role, enabled, created_at, updated_at, last_login_at
+                "SELECT user_id, username, password_hash, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json
                  FROM users WHERE user_id = ?1",
             )?;
             let mut rows = stmt.query(params![session.user_id])?;
             if let Some(row) = rows.next()? {
                 let role_str: String = row.get(3)?;
                 let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Viewer);
-                let enabled_num: i64 = row.get(4)?;
+                let enabled_num: i64 = row.get(5)?;
 
                 Ok(Some(User {
                     user_id: row.get(0)?,
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
                     role,
+                    display_name: row.get(4)?,
                     enabled: enabled_num != 0,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                    last_login_at: row.get(7)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    last_login_at: row.get(8)?,
+                    metadata_json: row.get(9).unwrap_or_else(|_| "{}".to_string()),
                 }))
             } else {
                 Ok(None)
@@ -352,6 +376,88 @@ impl AuthService {
         }
     }
 
+    /// Validates an active session, returning its validity, expiration, and user permissions.
+    pub fn validate_session(&self, token: &str) -> Result<SessionValidationResponse, LocardError> {
+        let now_epoch = Utc::now().timestamp();
+
+        let session: Option<Session> = self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT token, user_id, role, created_at, expires_at FROM sessions WHERE token = ?1",
+            )?;
+            let mut rows = stmt.query(params![token])?;
+            if let Some(row) = rows.next()? {
+                let role_str: String = row.get(2)?;
+                let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Viewer);
+                Ok(Some(Session {
+                    token: row.get(0)?,
+                    user_id: row.get(1)?,
+                    role,
+                    created_at: row.get(3)?,
+                    expires_at: row.get(4)?,
+                }))
+            } else {
+                Ok(None)
+            }
+        })?;
+
+        let session = match session {
+            Some(s) => s,
+            None => {
+                return Ok(SessionValidationResponse {
+                    is_valid: false,
+                    user: None,
+                    expires_at: None,
+                    time_remaining_seconds: None,
+                    permissions: vec![],
+                });
+            }
+        };
+
+        if is_expired(session.expires_at) {
+            let _ = self.db.with_conn(|conn| {
+                conn.execute("DELETE FROM sessions WHERE token = ?1", params![token])?;
+                Ok(())
+            });
+            let _ = self.audit.log_event(
+                "SESSION_EXPIRED",
+                &format!("Session expired for user_id '{}'", session.user_id),
+            );
+            return Ok(SessionValidationResponse {
+                is_valid: false,
+                user: None,
+                expires_at: Some(session.expires_at),
+                time_remaining_seconds: Some(0),
+                permissions: vec![],
+            });
+        }
+
+        let user = match self.get_current_user(token) {
+            Ok(u) => u,
+            Err(_) => {
+                return Ok(SessionValidationResponse {
+                    is_valid: false,
+                    user: None,
+                    expires_at: Some(session.expires_at),
+                    time_remaining_seconds: Some(session.expires_at.saturating_sub(now_epoch)),
+                    permissions: vec![],
+                });
+            }
+        };
+
+        let permissions = AuthorizationEngine::get_permissions_for_role(user.role)
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect();
+
+        Ok(SessionValidationResponse {
+            is_valid: true,
+            user: Some(user),
+            expires_at: Some(session.expires_at),
+            time_remaining_seconds: Some(session.expires_at.saturating_sub(now_epoch)),
+            permissions,
+        })
+    }
+
     /// Administrator command to create a new user account.
     /// Closed registration: only authenticated administrators can invoke this.
     pub fn create_user(
@@ -360,7 +466,7 @@ impl AuthService {
         req: CreateUserRequest,
     ) -> Result<PublicUser, LocardError> {
         let caller = self.get_current_user(token)?;
-        AuthorizationEngine::require_admin(caller.role)?;
+        AuthorizationEngine::check_permission(caller.role, Permission::UserCreate)?;
 
         let username = req.username.trim();
         validate_username(username)?;
@@ -388,25 +494,32 @@ impl AuthService {
             username: username.to_string(),
             password_hash: pwd_hash,
             role: req.role,
+            display_name: req
+                .display_name
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             enabled: true,
             created_at: now.clone(),
             updated_at: now.clone(),
             last_login_at: None,
+            metadata_json: req.metadata_json.unwrap_or_else(|| "{}".to_string()),
         };
 
         self.db.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO users (user_id, username, password_hash, role, enabled, created_at, updated_at, last_login_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO users (user_id, username, password_hash, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     user.user_id,
                     user.username,
                     user.password_hash,
                     user.role.to_string(),
+                    user.display_name,
                     if user.enabled { 1 } else { 0 },
                     user.created_at,
                     user.updated_at,
-                    user.last_login_at
+                    user.last_login_at,
+                    user.metadata_json
                 ],
             )?;
             Ok(())
@@ -430,6 +543,202 @@ impl AuthService {
         Ok(PublicUser::from(&user))
     }
 
+    /// Retrieves an individual user by user_id.
+    pub fn get_user(&self, token: &str, target_user_id: &str) -> Result<PublicUser, LocardError> {
+        let caller = self.get_current_user(token)?;
+        if caller.role != UserRole::Administrator && caller.user_id != target_user_id {
+            return Err(LocardError::SecurityViolation(
+                "Access denied: Insufficient privileges to view other users.".to_string(),
+            ));
+        }
+
+        let user: Option<PublicUser> = self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT user_id, username, password_hash, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json
+                 FROM users WHERE user_id = ?1",
+            )?;
+            let mut rows = stmt.query(params![target_user_id])?;
+            if let Some(row) = rows.next()? {
+                let role_str: String = row.get(3)?;
+                let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Viewer);
+                let enabled_num: i64 = row.get(5)?;
+
+                Ok(Some(PublicUser {
+                    user_id: row.get(0)?,
+                    username: row.get(1)?,
+                    role,
+                    display_name: row.get(4)?,
+                    enabled: enabled_num != 0,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    last_login_at: row.get(8)?,
+                    metadata_json: row.get(9).unwrap_or_else(|_| "{}".to_string()),
+                }))
+            } else {
+                Ok(None)
+            }
+        })?;
+
+        match user {
+            Some(u) => Ok(u),
+            None => Err(LocardError::SecurityViolation(
+                "User account not found.".to_string(),
+            )),
+        }
+    }
+
+    /// Updates user details such as display name or metadata.
+    pub fn update_user(
+        &self,
+        token: &str,
+        req: UpdateUserRequest,
+    ) -> Result<PublicUser, LocardError> {
+        let caller = self.get_current_user(token)?;
+        if caller.role != UserRole::Administrator && caller.user_id != req.user_id {
+            return Err(LocardError::SecurityViolation(
+                "Access denied: Insufficient privileges to update other user accounts.".to_string(),
+            ));
+        }
+
+        let now = Utc::now().to_rfc3339();
+
+        self.db.with_conn(|conn| {
+            if let Some(display_name) = &req.display_name {
+                conn.execute(
+                    "UPDATE users SET display_name = ?1, updated_at = ?2 WHERE user_id = ?3",
+                    params![display_name.trim(), now, req.user_id],
+                )?;
+            }
+            if let Some(meta) = &req.metadata_json {
+                conn.execute(
+                    "UPDATE users SET metadata_json = ?1, updated_at = ?2 WHERE user_id = ?3",
+                    params![meta.trim(), now, req.user_id],
+                )?;
+            }
+            Ok(())
+        })?;
+
+        self.audit.log_event(
+            "USER_UPDATED",
+            &format!(
+                "User details updated for user_id '{}' by '{}'",
+                req.user_id, caller.username
+            ),
+        )?;
+
+        self.get_user(token, &req.user_id)
+    }
+
+    /// Administrator command to change a user's assigned role.
+    pub fn change_user_role(
+        &self,
+        token: &str,
+        req: ChangeUserRoleRequest,
+    ) -> Result<PublicUser, LocardError> {
+        let caller = self.get_current_user(token)?;
+        AuthorizationEngine::check_permission(caller.role, Permission::UserChangeRole)?;
+
+        // Guard: Prevent demoting the last active administrator
+        if req.new_role != UserRole::Administrator {
+            let (target_is_admin, admin_count): (bool, i64) = self.db.with_conn(|conn| {
+                let mut stmt = conn.prepare("SELECT role FROM users WHERE user_id = ?1")?;
+                let mut rows = stmt.query(params![req.user_id])?;
+                let target_role: Option<String> = if let Some(row) = rows.next()? {
+                    Some(row.get(0)?)
+                } else {
+                    None
+                };
+
+                let is_admin = target_role.as_deref() == Some("Administrator");
+                let mut count_stmt = conn.prepare(
+                    "SELECT COUNT(*) FROM users WHERE role = 'Administrator' AND enabled = 1",
+                )?;
+                let count: i64 = count_stmt.query_row([], |r| r.get(0))?;
+
+                Ok((is_admin, count))
+            })?;
+
+            if target_is_admin && admin_count <= 1 {
+                return Err(LocardError::SecurityViolation(
+                    "Cannot demote the sole active Administrator account.".to_string(),
+                ));
+            }
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let affected = self.db.with_conn(|conn| {
+            let aff = conn.execute(
+                "UPDATE users SET role = ?1, updated_at = ?2 WHERE user_id = ?3",
+                params![req.new_role.to_string(), now, req.user_id],
+            )?;
+
+            // Also update any active sessions for this user
+            conn.execute(
+                "UPDATE sessions SET role = ?1 WHERE user_id = ?2",
+                params![req.new_role.to_string(), req.user_id],
+            )?;
+
+            Ok(aff)
+        })?;
+
+        if affected == 0 {
+            return Err(LocardError::SecurityViolation(
+                "User account not found.".to_string(),
+            ));
+        }
+
+        self.audit.log_event(
+            "USER_ROLE_CHANGED",
+            &format!(
+                "Administrator '{}' changed user_id '{}' role to '{}'",
+                caller.username, req.user_id, req.new_role
+            ),
+        )?;
+
+        self.get_user(token, &req.user_id)
+    }
+
+    /// Administrator command to unlock a temporarily locked user account.
+    pub fn unlock_user(&self, token: &str, req: UnlockUserRequest) -> Result<(), LocardError> {
+        let caller = self.get_current_user(token)?;
+        AuthorizationEngine::check_permission(caller.role, Permission::UserUnlock)?;
+
+        self.clear_failed_attempts(&req.username)?;
+
+        self.audit.log_event(
+            "ACCOUNT_UNLOCKED",
+            &format!(
+                "Administrator '{}' unlocked account '{}'",
+                caller.username, req.username
+            ),
+        )?;
+
+        Ok(())
+    }
+
+    /// Asserts that the authenticated caller has the required permission.
+    /// If unauthorized, logs an AUTHORIZATION_DENIED audit event and fails closed.
+    pub fn authorize_permission(
+        &self,
+        token: &str,
+        permission: Permission,
+    ) -> Result<PublicUser, LocardError> {
+        let user = self.get_current_user(token)?;
+
+        if let Err(err) = AuthorizationEngine::check_permission(user.role, permission) {
+            let _ = self.audit.log_event(
+                "AUTHORIZATION_DENIED",
+                &format!(
+                    "User '{}' (role: '{}') denied permission '{:?}'",
+                    user.username, user.role, permission
+                ),
+            );
+            return Err(err);
+        }
+
+        Ok(user)
+    }
+
     /// Administrator command to enable or disable an existing user account.
     pub fn set_user_enabled(
         &self,
@@ -438,7 +747,7 @@ impl AuthService {
         enabled: bool,
     ) -> Result<(), LocardError> {
         let caller = self.get_current_user(token)?;
-        AuthorizationEngine::require_admin(caller.role)?;
+        AuthorizationEngine::check_permission(caller.role, Permission::UserDisable)?;
 
         // Guard: Cannot disable the last active administrator
         if !enabled {
@@ -507,27 +816,29 @@ impl AuthService {
     /// Administrator command to list all user accounts (sanitized, no password hashes).
     pub fn list_users(&self, token: &str) -> Result<Vec<PublicUser>, LocardError> {
         let caller = self.get_current_user(token)?;
-        AuthorizationEngine::require_admin(caller.role)?;
+        AuthorizationEngine::check_permission(caller.role, Permission::UserList)?;
 
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT user_id, username, role, enabled, created_at, updated_at, last_login_at
+                "SELECT user_id, username, role, display_name, enabled, created_at, updated_at, last_login_at, metadata_json
                  FROM users ORDER BY created_at ASC",
             )?;
 
             let rows = stmt.query_map([], |row| {
                 let role_str: String = row.get(2)?;
                 let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Viewer);
-                let enabled_num: i64 = row.get(3)?;
+                let enabled_num: i64 = row.get(4)?;
 
                 Ok(PublicUser {
                     user_id: row.get(0)?,
                     username: row.get(1)?,
                     role,
+                    display_name: row.get(3)?,
                     enabled: enabled_num != 0,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
-                    last_login_at: row.get(6)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                    last_login_at: row.get(7)?,
+                    metadata_json: row.get(8).unwrap_or_else(|_| "{}".to_string()),
                 })
             })?;
 
@@ -591,8 +902,12 @@ impl AuthService {
             };
 
             let new_count = count + 1;
-            // Lock account for 5 minutes after 5 consecutive failures
-            let locked_until = if new_count >= 5 { now + 300 } else { 0 };
+            // Lock account for lockout duration after max consecutive failures
+            let locked_until = if new_count >= MAX_FAILED_LOGIN_ATTEMPTS {
+                now + LOCKOUT_DURATION_SECONDS
+            } else {
+                0
+            };
 
             conn.execute(
                 "INSERT INTO login_attempts (username, failed_count, locked_until)
@@ -607,7 +922,7 @@ impl AuthService {
         })
     }
 
-    // Helper: clears failed attempts upon successful login
+    // Helper: clears failed attempts upon successful login or admin unlock
     fn clear_failed_attempts(&self, username: &str) -> Result<(), LocardError> {
         self.db.with_conn(|conn| {
             conn.execute(

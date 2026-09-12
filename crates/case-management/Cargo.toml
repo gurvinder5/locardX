@@ -1,0 +1,26 @@
+[package]
+name = "locardx-case-management"
+version.workspace = true
+edition.workspace = true
+description = "LocardX unified case management, cross-module evidence, and chain of custody"
+
+[dependencies]
+locardx-common = { path = "../common" }
+locardx-audit = { path = "../audit" }
+locardx-database = { path = "../database" }
+locardx-reporting = { path = "../reporting" }
+locardx-auth = { path = "../auth" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+locardx-drive-eraser = { path = "../drive-eraser" }
+locardx-acquisition = { path = "../acquisition" }
+locardx-recovery-engine = { path = "../recovery-engine" }
+locardx-verification = { path = "../verification" }

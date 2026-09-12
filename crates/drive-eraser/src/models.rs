@@ -562,41 +562,133 @@ impl PhysicalDeviceSnapshot {
         self
     }
 
-    /// Verifies whether live hardware attributes match the recorded snapshot.
-    /// Detects drive substitution, capacity changes, sector size shifts, and partition changes.
-    pub fn detect_mutation(&self, live: &PhysicalDeviceSnapshot) -> Result<(), String> {
+    /// Returns true if this device exhibits characteristics of removable or external storage.
+    pub fn is_external_or_removable(&self) -> bool {
+        self.is_removable
+            || matches!(
+                self.classification,
+                DeviceClassification::RemovableDevice | DeviceClassification::ExternalDevice
+            )
+            || matches!(
+                self.media_type,
+                DeviceType::Usb | DeviceType::MemoryCard | DeviceType::ExternalStorage
+            )
+            || matches!(
+                self.bus_type.as_deref().map(|b| b.to_ascii_uppercase()).as_deref(),
+                Some("USB") | Some("SD") | Some("MMC") | Some("1394")
+            )
+    }
+
+    /// Converts this snapshot into a `DeviceIdentity` descriptor.
+    pub fn to_identity(&self) -> DeviceIdentity {
+        DeviceIdentity {
+            device_id: self.device_id.clone(),
+            display_name: self.display_name.clone(),
+            vendor: self.vendor.clone(),
+            model: self.model.clone(),
+            serial_number: self.serial_number.clone(),
+            media_type: self.media_type,
+            capacity_bytes: self.capacity_bytes,
+            sector_size: self.sector_size,
+            physical_sector_size: self.physical_sector_size,
+            bus_type: self.bus_type.clone(),
+            is_removable: self.is_removable,
+            classification: self.classification,
+        }
+    }
+
+    /// Revalidates device identity between planning and live execution with hierarchical identifier tiers:
+    /// - **Strong identifiers** (device path, capacity, bus type, media category): MUST match strictly.
+    /// - **System / boot status**: MUST strictly remain non-system, non-boot.
+    /// - **Supporting identifiers** (model, sector sizes): MUST match strictly.
+    /// - **Potentially unreliable identifiers** (serial number):
+    ///   - Strictly required for internal/fixed media.
+    ///   - On external/removable media (USB mass storage bridges, generic USB drives, SD card readers),
+    ///     serial discrepancies are recorded as non-fatal audit warnings (`VerifiedWithDiscrepancy`).
+    pub fn revalidate_identity(&self, live: &PhysicalDeviceSnapshot) -> IdentityRevalidationOutcome {
         if !live.exists {
-            return Err(format!(
+            return IdentityRevalidationOutcome::Failed(format!(
                 "Target device '{}' no longer exists or was disconnected",
                 self.device_id
             ));
         }
 
-        if self.device_id != live.device_id {
-            return Err(format!(
+        if !self.device_id.eq_ignore_ascii_case(&live.device_id) {
+            return IdentityRevalidationOutcome::Failed(format!(
                 "Device ID mismatch: planned '{}', live '{}'",
                 self.device_id, live.device_id
             ));
         }
 
-        if self.serial_number != live.serial_number
-            && (self.serial_number.is_some() || live.serial_number.is_some())
+        if live.is_system || live.is_boot {
+            return IdentityRevalidationOutcome::Failed(
+                "Target device is now recognized as an active system or boot device".to_string(),
+            );
+        }
+
+        if live.classification == DeviceClassification::SystemDevice
+            || live.classification == DeviceClassification::BootDevice
         {
-            return Err(format!(
-                "Device serial number changed: planned {:?}, live {:?}",
-                self.serial_number, live.serial_number
+            return IdentityRevalidationOutcome::Failed(format!(
+                "Target device is now classified as {:?}",
+                live.classification
             ));
         }
 
+        let mut discrepancies = Vec::new();
+
+        // Serial Number Evaluation:
+        // For external/removable devices (both planned and live must be external/removable),
+        // serial discrepancies (common with USB bridges and card readers) are tolerated with an audit warning.
+        // For internal fixed devices, serial changes strictly fail closed.
+        let serial_matches = match (&self.serial_number, &live.serial_number) {
+            (Some(a), Some(b)) => a.trim().eq_ignore_ascii_case(b.trim()),
+            (None, None) => true,
+            _ => false,
+        };
+
+        if !serial_matches {
+            let is_external = self.is_external_or_removable() && live.is_external_or_removable();
+            if is_external {
+                discrepancies.push(format!(
+                    "Device serial number discrepancy on external/removable media: planned {:?}, live {:?}",
+                    self.serial_number, live.serial_number
+                ));
+            } else {
+                return IdentityRevalidationOutcome::Failed(format!(
+                    "Device serial number changed: planned {:?}, live {:?}",
+                    self.serial_number, live.serial_number
+                ));
+            }
+        }
+
+        // Strong Identifier: Capacity
         if self.capacity_bytes != live.capacity_bytes {
-            return Err(format!(
+            return IdentityRevalidationOutcome::Failed(format!(
                 "Device capacity changed: planned {} bytes, live {} bytes",
                 self.capacity_bytes, live.capacity_bytes
             ));
         }
 
+        // Strong Identifier: Media Type
+        if self.media_type != live.media_type {
+            return IdentityRevalidationOutcome::Failed(format!(
+                "Media type mutated: planned '{:?}', live '{:?}'",
+                self.media_type, live.media_type
+            ));
+        }
+
+        // Strong Identifier: Bus Type
+        if self.bus_type != live.bus_type && (self.bus_type.is_some() || live.bus_type.is_some()) {
+            return IdentityRevalidationOutcome::Failed(format!(
+                "Bus type mutated: planned {:?}, live {:?}",
+                self.bus_type, live.bus_type
+            ));
+        }
+
+        // Supporting Identifier: Sector Size
         if self.sector_size != live.sector_size {
-            return Err(format!(
+            return IdentityRevalidationOutcome::Failed(format!(
                 "Sector size mutated: planned {} bytes, live {} bytes",
                 self.sector_size, live.sector_size
             ));
@@ -605,61 +697,113 @@ impl PhysicalDeviceSnapshot {
         if self.physical_sector_size != live.physical_sector_size
             && (self.physical_sector_size.is_some() || live.physical_sector_size.is_some())
         {
-            return Err(format!(
+            return IdentityRevalidationOutcome::Failed(format!(
                 "Physical sector size mutated: planned {:?}, live {:?}",
                 self.physical_sector_size, live.physical_sector_size
             ));
         }
 
-        if self.bus_type != live.bus_type && (self.bus_type.is_some() || live.bus_type.is_some()) {
-            return Err(format!(
-                "Bus type mutated: planned {:?}, live {:?}",
-                self.bus_type, live.bus_type
-            ));
-        }
-
-        if self.media_type != live.media_type {
-            return Err(format!(
-                "Media type mutated: planned '{:?}', live '{:?}'",
-                self.media_type, live.media_type
-            ));
-        }
-
-        if self.model != live.model && (self.model.is_some() && live.model.is_some()) {
-            return Err(format!(
-                "Hardware model identity mutated: planned {:?}, live {:?}",
-                self.model, live.model
-            ));
-        }
-
-        if self.partition_count != live.partition_count {
-            return Err(format!(
-                "Partition topology mutated: planned {} partitions, live {} partitions",
-                self.partition_count, live.partition_count
-            ));
-        }
-
-        if !self.volume_labels.is_empty() && self.volume_labels != live.volume_labels {
-            return Err(format!(
-                "Volume labels mutated: planned {:?}, live {:?}",
-                self.volume_labels, live.volume_labels
-            ));
-        }
-
-        if live.is_system || live.is_boot {
-            return Err(
-                "Target device is now recognized as an active system or boot device".to_string(),
-            );
-        }
-
+        // Write status check
         if !self.is_read_only && live.is_read_only {
-            return Err(
+            return IdentityRevalidationOutcome::Failed(
                 "Target device write status changed: device is now read-only / write-protected"
                     .to_string(),
             );
         }
 
-        Ok(())
+        // Supporting Identifier: Hardware Model
+        if self.model != live.model && (self.model.is_some() && live.model.is_some()) {
+            return IdentityRevalidationOutcome::Failed(format!(
+                "Hardware model identity mutated: planned {:?}, live {:?}",
+                self.model, live.model
+            ));
+        }
+
+        // Partition topology check
+        if self.partition_count != live.partition_count {
+            let is_external = self.is_external_or_removable() || live.is_external_or_removable();
+            if is_external {
+                discrepancies.push(format!(
+                    "Partition count changed on external storage: planned {}, live {}",
+                    self.partition_count, live.partition_count
+                ));
+            } else {
+                return IdentityRevalidationOutcome::Failed(format!(
+                    "Partition topology mutated: planned {} partitions, live {} partitions",
+                    self.partition_count, live.partition_count
+                ));
+            }
+        }
+
+        if !self.volume_labels.is_empty() && self.volume_labels != live.volume_labels {
+            let is_external = self.is_external_or_removable() || live.is_external_or_removable();
+            if is_external {
+                discrepancies.push(format!(
+                    "Volume labels changed on external storage: planned {:?}, live {:?}",
+                    self.volume_labels, live.volume_labels
+                ));
+            } else {
+                return IdentityRevalidationOutcome::Failed(format!(
+                    "Volume labels mutated: planned {:?}, live {:?}",
+                    self.volume_labels, live.volume_labels
+                ));
+            }
+        }
+
+        if discrepancies.is_empty() {
+            IdentityRevalidationOutcome::Verified
+        } else {
+            IdentityRevalidationOutcome::VerifiedWithDiscrepancy(discrepancies)
+        }
+    }
+
+    /// Verifies whether live hardware attributes match the recorded snapshot.
+    /// Detects drive substitution, capacity changes, sector size shifts, and partition changes.
+    pub fn detect_mutation(&self, live: &PhysicalDeviceSnapshot) -> Result<(), String> {
+        match self.revalidate_identity(live) {
+            IdentityRevalidationOutcome::Verified => Ok(()),
+            IdentityRevalidationOutcome::VerifiedWithDiscrepancy(_) => Ok(()),
+            IdentityRevalidationOutcome::Failed(err) => Err(err),
+        }
+    }
+}
+
+/// Detailed multi-attribute identity descriptor for a physical storage device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceIdentity {
+    pub device_id: String,
+    pub display_name: String,
+    pub vendor: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub media_type: DeviceType,
+    pub capacity_bytes: u64,
+    pub sector_size: u32,
+    pub physical_sector_size: Option<u32>,
+    pub bus_type: Option<String>,
+    pub is_removable: bool,
+    pub classification: DeviceClassification,
+}
+
+/// Outcome of device identity revalidation comparing planned snapshot to live hardware.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IdentityRevalidationOutcome {
+    /// Live device identity strictly matches all attributes.
+    Verified,
+    /// Live device matches strong identity attributes (path, capacity, bus, media type),
+    /// with benign discrepancies on weak attributes (e.g. serial number on USB bridge or SD card reader).
+    VerifiedWithDiscrepancy(Vec<String>),
+    /// Live device failed validation due to mutation, substitution, disconnection, or becoming a system device.
+    Failed(String),
+}
+
+impl IdentityRevalidationOutcome {
+    pub fn is_verified(&self) -> bool {
+        matches!(self, Self::Verified | Self::VerifiedWithDiscrepancy(_))
+    }
+
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed(_))
     }
 }
 
@@ -719,6 +863,8 @@ pub struct HardwareExecutionPermit {
     ttl_seconds: u64,
     #[serde(skip, default = "default_consumed_flag")]
     consumed: Arc<AtomicBool>,
+    #[serde(default)]
+    identity_discrepancies: Vec<String>,
 }
 
 impl HardwareExecutionPermit {
@@ -743,7 +889,28 @@ impl HardwareExecutionPermit {
             issued_at: Utc::now().to_rfc3339(),
             ttl_seconds: 300,
             consumed: Arc::new(AtomicBool::new(false)),
+            identity_discrepancies: Vec::new(),
         }
+    }
+
+    /// Testing helper to issue a permit directly for unit and integration testing.
+    #[doc(hidden)]
+    pub fn issue_for_test(
+        operation_id: String,
+        plan_id: String,
+        physical_device_id: String,
+        device_snapshot: PhysicalDeviceSnapshot,
+        method: DriveSanitizationMethod,
+        execution_mode: ExecutionMode,
+    ) -> Self {
+        Self::issue(
+            operation_id,
+            plan_id,
+            physical_device_id,
+            device_snapshot,
+            method,
+            execution_mode,
+        )
     }
 
     pub fn ttl_seconds(&self) -> u64 {
@@ -753,6 +920,15 @@ impl HardwareExecutionPermit {
     pub fn with_ttl(mut self, ttl_seconds: u64) -> Self {
         self.ttl_seconds = ttl_seconds;
         self
+    }
+
+    pub fn with_identity_discrepancies(mut self, discrepancies: Vec<String>) -> Self {
+        self.identity_discrepancies = discrepancies;
+        self
+    }
+
+    pub fn identity_discrepancies(&self) -> &[String] {
+        &self.identity_discrepancies
     }
 
     /// Verifies that the permit has not exceeded its authorized TTL.
@@ -894,6 +1070,8 @@ pub struct DriveEraseResult {
     pub started_at: String,
     pub completed_at: String,
     pub limitations: Vec<String>,
+    #[serde(default)]
+    pub identity_discrepancies: Vec<String>,
 }
 
 /// Request payload to plan a drive erasure.

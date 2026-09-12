@@ -297,6 +297,8 @@ impl WindowsDeviceProvider {
                 u32::from_le_bytes([buffer[16], buffer[17], buffer[18], buffer[19]]) as usize;
             let product_offset =
                 u32::from_le_bytes([buffer[20], buffer[21], buffer[22], buffer[23]]) as usize;
+            let serial_offset =
+                u32::from_le_bytes([buffer[24], buffer[25], buffer[26], buffer[27]]) as usize;
             let bus_type = if bytes_returned >= 32 {
                 u32::from_le_bytes([buffer[28], buffer[29], buffer[30], buffer[31]])
             } else {
@@ -312,6 +314,9 @@ impl WindowsDeviceProvider {
             }
             if product_offset > 0 && product_offset < buffer.len() {
                 meta.model = read_null_terminated_ascii(&buffer[product_offset..]);
+            }
+            if serial_offset > 0 && serial_offset < buffer.len() {
+                meta.serial_number = read_null_terminated_ascii(&buffer[serial_offset..]);
             }
         }
 
@@ -349,6 +354,7 @@ struct PhysicalDiskMetadata {
     capacity_bytes: u64,
     vendor: Option<String>,
     model: Option<String>,
+    serial_number: Option<String>,
     removable: bool,
     bus_type: u32,
     incurs_seek_penalty: Option<bool>,
@@ -530,7 +536,7 @@ impl DeviceDiscoveryProvider for WindowsDeviceProvider {
                 display_name,
                 vendor: meta.vendor,
                 model: meta.model,
-                serial_number: None, // Omitted to avoid unmasked serial exposure
+                serial_number: meta.serial_number,
                 device_type,
                 capacity_bytes,
                 removable: meta.removable,

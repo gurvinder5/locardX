@@ -352,13 +352,23 @@ export const DriveEraserPage: React.FC = () => {
           };
         });
       }, 200);
+      let confirmValue = typedConfirmation.trim();
+      if (confirmValue.toLowerCase().startsWith('confirm-erase ')) {
+        confirmValue = confirmValue.substring('confirm-erase '.length).trim();
+      } else if (confirmValue.toLowerCase().startsWith('confirm ')) {
+        confirmValue = confirmValue.substring('confirm '.length).trim();
+      }
+      if (!confirmValue.startsWith('\\\\.\\') && plan.physical_device_id.startsWith('\\\\.\\')) {
+        confirmValue = `\\\\.\\${confirmValue}`;
+      }
 
+      // Execute Sanitization via Tauri Backend API
       const res = isHardware
         ? await executeDriveErasureHardware({
             plan_id: plan.plan_id,
             confirmation_id: confirmationId,
             operation_id: `op-drive-hw-${Date.now()}`,
-            typed_confirmation: typedConfirmation.trim(),
+            typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'hw-session',
           })
@@ -366,7 +376,7 @@ export const DriveEraserPage: React.FC = () => {
             plan_id: plan.plan_id,
             confirmation_id: confirmationId,
             operation_id: `op-drive-sim-${Date.now()}`,
-            typed_confirmation: typedConfirmation.trim(),
+            typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'sim-session',
           });
@@ -563,6 +573,20 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
         </div>
       )}
 
+      {/* Real Hardware Active Banner */}
+      {executionMode === 'RealHardware' && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-3.5 flex items-start space-x-3 text-xs shadow-xs">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold">Real Hardware Mode Active: </span>
+            Sanitization will physically overwrite sectors on the selected external device.
+            <span className="font-semibold text-emerald-800 ml-1">
+              (Your laptop's internal Windows system/boot drive is strictly protected and locked against erasure).
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Workflow Step 1: Device Selection */}
       <div className="bg-white border border-slate-200 rounded-md shadow-xs p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
@@ -717,15 +741,20 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
                         {formatBytes(d.capacity_bytes)}
                       </span>
 
-                      {isSystem ? (
+                      {isSystem || d.device_id.toLowerCase().includes('physicaldrive0') ? (
                         <span className="bg-rose-100 text-rose-800 text-[9px] font-bold px-1.5 py-0.5 rounded-xs flex items-center gap-1">
                           <Lock className="w-2.5 h-2.5" />
-                          SYSTEM DEVICE
+                          PROTECTED (SYSTEM)
                         </span>
                       ) : isBoot ? (
                         <span className="bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-xs flex items-center gap-1">
                           <Lock className="w-2.5 h-2.5" />
                           BOOT DEVICE
+                        </span>
+                      ) : d.removable || d.classification === 'removable_device' || d.classification === 'external_device' || d.device_type === 'usb' || d.device_type === 'memory_card' ? (
+                        <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded-xs flex items-center gap-1">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          READY FOR SANITIZATION
                         </span>
                       ) : (
                         <span className="bg-slate-200 text-slate-700 text-[9px] font-semibold px-1.5 py-0.5 rounded-xs uppercase">
@@ -1264,12 +1293,18 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
 
             {/* Typed Confirmation */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-slate-700">
-                To confirm, type the exact device path (
-                <strong className="font-mono">{plan.physical_device_id}</strong> or{' '}
-                <strong className="font-mono">{plan.physical_device_id.replace(/^\\\\\.\\\\/, '')}</strong>
-                ):
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-medium text-slate-700">
+                  Type target device to confirm:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setTypedConfirmation(plan.physical_device_id)}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer underline"
+                >
+                  Auto-fill "{plan.physical_device_id}"
+                </button>
+              </div>
               <input
                 type="text"
                 value={typedConfirmation}
@@ -1277,6 +1312,11 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
                 placeholder={plan.physical_device_id}
                 className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-500"
               />
+              <p className="text-[10px] text-slate-500">
+                Accepts <code className="font-mono bg-slate-100 px-1 py-0.5 rounded">{plan.physical_device_id}</code>,{' '}
+                <code className="font-mono bg-slate-100 px-1 py-0.5 rounded">{plan.physical_device_id.replace(/^\\\\\.\\/, '')}</code>, or{' '}
+                <code className="font-mono bg-slate-100 px-1 py-0.5 rounded">CONFIRM-ERASE {plan.physical_device_id}</code>.
+              </p>
             </div>
 
             <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
@@ -1291,9 +1331,13 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
                 type="button"
                 disabled={
                   !warningAcknowledged ||
-                  (typedConfirmation.trim().toLowerCase() !== plan.physical_device_id.toLowerCase() &&
-                    typedConfirmation.trim().toLowerCase() !==
-                      plan.physical_device_id.replace(/^\\\\\.\\\\/, '').toLowerCase())
+                  !(
+                    typedConfirmation.trim().toLowerCase() === plan.physical_device_id.toLowerCase() ||
+                    typedConfirmation.trim().toLowerCase() === plan.physical_device_id.replace(/^\\\\\.\\/, '').toLowerCase() ||
+                    typedConfirmation.trim().toLowerCase() === plan.physical_device_id.replace(/^\\\\\\.\\\\/, '').toLowerCase() ||
+                    typedConfirmation.trim().toLowerCase() === `confirm-erase ${plan.physical_device_id.toLowerCase()}` ||
+                    typedConfirmation.trim().toLowerCase() === `confirm ${plan.physical_device_id.toLowerCase()}`
+                  )
                 }
                 onClick={handleExecute}
                 className={`font-semibold text-xs px-4 py-2 rounded-md shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${

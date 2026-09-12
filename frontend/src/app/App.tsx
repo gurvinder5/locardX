@@ -13,6 +13,8 @@ import {
   Activity,
   Loader2,
   Cpu,
+  Download,
+  Briefcase,
 } from 'lucide-react';
 import { getAppInfo, AppInfo } from '../services/tauri';
 import { useAuthStore } from '../stores/authStore';
@@ -27,14 +29,20 @@ import { SafetyInterlocksPage } from '../pages/SafetyInterlocksPage';
 import { SanitizationPlannerPage } from '../pages/SanitizationPlannerPage';
 import { FileEraserPage } from '../pages/FileEraserPage';
 import { DriveEraserPage } from '../pages/DriveEraserPage';
+import { ForensicAcquisitionPage } from '../pages/ForensicAcquisitionPage';
+import { ForensicRecoveryPage } from '../pages/ForensicRecoveryPage';
+import { CaseManagementPage } from '../pages/CaseManagementPage';
+import { AuditTrailPage } from '../pages/AuditTrailPage';
 
 type NavTab =
   | 'dashboard'
+  | 'cases'
   | 'device-explorer'
   | 'operations'
   | 'integrity'
   | 'safety-interlocks'
   | 'sanitization-planner'
+  | 'acquisition'
   | 'drive-eraser'
   | 'file-eraser'
   | 'recovery'
@@ -160,6 +168,18 @@ export const App: React.FC = () => {
       <nav className="bg-white border-b border-slate-200 px-6">
         <div className="flex space-x-1 overflow-x-auto py-1">
           <button
+            onClick={() => setActiveTab('cases')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
+              activeTab === 'cases'
+                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Cases</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('device-explorer')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'device-explorer'
@@ -256,6 +276,18 @@ export const App: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('acquisition')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
+              activeTab === 'acquisition'
+                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Download className="w-3.5 h-3.5 text-blue-600" />
+            <span>Forensic Acquisition</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('recovery')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'recovery'
@@ -297,6 +329,7 @@ export const App: React.FC = () => {
 
       {/* Main Content Viewport */}
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+        {activeTab === 'cases' && <CaseManagementPage />}
         {activeTab === 'device-explorer' && <DeviceExplorerPage />}
         {activeTab === 'operations' && <OperationsPage />}
         {activeTab === 'integrity' && <IntegrityVerificationPage />}
@@ -304,7 +337,11 @@ export const App: React.FC = () => {
         {activeTab === 'sanitization-planner' && <SanitizationPlannerPage />}
 
         {activeTab === 'dashboard' && (
-          <DashboardPage appInfo={appInfo} loading={infoLoading} />
+          <DashboardPage
+            appInfo={appInfo}
+            loading={infoLoading}
+            onNavigate={(tab) => setActiveTab(tab as NavTab)}
+          />
         )}
 
         {activeTab === 'user-management' && <UserManagementPage />}
@@ -313,25 +350,11 @@ export const App: React.FC = () => {
 
         {activeTab === 'file-eraser' && <FileEraserPage />}
 
-        {activeTab === 'recovery' && (
-          <div className="bg-white border border-slate-200 rounded-md p-8 text-center space-y-2 shadow-2xs">
-            <Search className="w-10 h-10 text-slate-400 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-800">Forensic Recovery (Pillar 3)</h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Read-only disk image carving, header/footer signature matching, and integrity scoring.
-            </p>
-          </div>
-        )}
+        {activeTab === 'acquisition' && <ForensicAcquisitionPage />}
 
-        {activeTab === 'audit-logs' && (
-          <div className="bg-white border border-slate-200 rounded-md p-8 text-center space-y-2 shadow-2xs">
-            <ClipboardList className="w-10 h-10 text-slate-400 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-800">Tamper-Evident Audit Trail</h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Cryptographic SHA-256 hash-chained log verifying all authentication and operational events.
-            </p>
-          </div>
-        )}
+        {activeTab === 'recovery' && <ForensicRecoveryPage />}
+
+        {activeTab === 'audit-logs' && <AuditTrailPage />}
       </main>
 
       {/* Footer Status Bar */}

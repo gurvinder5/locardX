@@ -25,6 +25,9 @@ pub struct AppState {
     pub mock_device_registry: Arc<locardx_drive_eraser::MockDeviceRegistry>,
     pub real_hardware_provider: Arc<dyn locardx_drive_eraser::DriveHardwareProvider>,
     pub reporting: Arc<locardx_reporting::ReportingService>,
+    pub acquisition: Arc<locardx_acquisition::AcquisitionService>,
+    pub recovery: Arc<locardx_recovery_engine::RecoveryService>,
+    pub case_service: Arc<locardx_case_management::CaseService>,
 }
 
 impl AppState {
@@ -78,15 +81,21 @@ impl AppState {
             Arc::new(locardx_drive_eraser::MockDeviceRegistry::new_standard_test_set());
         let real_hardware_provider: Arc<dyn locardx_drive_eraser::DriveHardwareProvider> =
             Arc::new(locardx_drive_eraser::RealDriveHardwareProvider::new());
+        let real_hardware_executor: Arc<dyn locardx_drive_eraser::DriveHardwareExecutor> =
+            Arc::new(locardx_drive_eraser::RealDriveHardwareExecutor::new());
+        let execution_gate =
+            Arc::new(locardx_drive_eraser::RealHardwareExecutionGate::with_enabled(true));
         let drive_eraser = Arc::new(
             locardx_drive_eraser::DriveEraserService::new(
                 Arc::clone(&db),
                 Arc::clone(&audit),
                 Arc::clone(&safety),
-                Arc::clone(&mock_device_registry)
+                Arc::clone(&device_manager)
                     as Arc<dyn locardx_device_manager::DeviceDiscoveryProvider>,
             )
-            .with_hardware_provider(Arc::clone(&real_hardware_provider)),
+            .with_hardware_provider(Arc::clone(&real_hardware_provider))
+            .with_execution_gate(execution_gate)
+            .with_executor(real_hardware_executor),
         );
 
         let operation_manager = Arc::new(
@@ -102,15 +111,33 @@ impl AppState {
             Arc::clone(&audit),
         ));
 
+        let acquisition = Arc::new(locardx_acquisition::AcquisitionService::new(
+            Arc::clone(&db),
+            Arc::clone(&audit),
+        ));
+
+        let recovery = Arc::new(locardx_recovery_engine::RecoveryService::new(
+            Arc::clone(&db),
+            Arc::clone(&audit),
+        ));
+
+        let case_service = Arc::new(locardx_case_management::CaseService::new(
+            Arc::clone(&db),
+            Arc::clone(&audit),
+            Arc::clone(&reporting),
+        ));
+
         // Automatic crash recovery: fail closed on any operations interrupted by prior termination
         let rec_ops = operation_manager
             .recover_interrupted_operations()
             .unwrap_or(0);
         let rec_drives = drive_eraser.recover_interrupted_erasures().unwrap_or(0);
-        if rec_ops > 0 || rec_drives > 0 {
+        let rec_acqs = acquisition.recover_interrupted_acquisitions().unwrap_or(0);
+        if rec_ops > 0 || rec_drives > 0 || rec_acqs > 0 {
             info!(
                 recovered_operations = rec_ops,
                 recovered_drive_erasures = rec_drives,
+                recovered_acquisitions = rec_acqs,
                 "Recovered interrupted operations from abnormal termination"
             );
         }
@@ -135,6 +162,9 @@ impl AppState {
             mock_device_registry,
             real_hardware_provider,
             reporting,
+            acquisition,
+            recovery,
+            case_service,
         })
     }
 }

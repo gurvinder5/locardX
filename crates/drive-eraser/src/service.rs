@@ -449,6 +449,7 @@ impl DriveEraserService {
                     started_at,
                     completed_at,
                     limitations: plan.limitations,
+                    identity_discrepancies: Vec::new(),
                 };
 
                 self.record_result(&res)?;
@@ -485,6 +486,7 @@ impl DriveEraserService {
                     started_at,
                     completed_at,
                     limitations: plan.limitations,
+                    identity_discrepancies: Vec::new(),
                 };
 
                 self.record_result(&res)?;
@@ -521,6 +523,7 @@ impl DriveEraserService {
                     started_at,
                     completed_at,
                     limitations: plan.limitations,
+                    identity_discrepancies: Vec::new(),
                 };
 
                 self.record_result(&res)?;
@@ -593,6 +596,19 @@ impl DriveEraserService {
                 permit.permit_id(), operation_id, confirmation_id, plan.physical_device_id, execution_mode, plan.method
             ),
         );
+
+        if !permit.identity_discrepancies().is_empty() {
+            let _ = self.audit.log_structured_event(
+                "IDENTITY_REVALIDATION_WARNING",
+                Some(session_token),
+                Some(&plan.physical_device_id),
+                &format!(
+                    "Drive identity revalidation accepted with discrepancies on '{}': {:?}",
+                    plan.physical_device_id,
+                    permit.identity_discrepancies()
+                ),
+            );
+        }
 
         // 4. Dispatch based on execution mode
         let (bytes_processed, elapsed_seconds, verification, status, failure_reason, audit_events) =
@@ -773,6 +789,7 @@ impl DriveEraserService {
             started_at,
             completed_at,
             limitations: plan.limitations,
+            identity_discrepancies: permit.identity_discrepancies().to_vec(),
         };
 
         self.record_result(&res)?;
@@ -1020,6 +1037,7 @@ impl DriveEraserService {
                     started_at: started,
                     completed_at: completed,
                     limitations: vec![],
+                    identity_discrepancies: vec![],
                 }))
             } else {
                 Ok(None)

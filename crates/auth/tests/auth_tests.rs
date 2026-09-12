@@ -1,601 +1,1040 @@
 use locardx_audit::AuditService;
 use locardx_auth::{
-    models::{ChangePasswordRequest, CreateUserRequest, InitAdminRequest, LoginRequest, UserRole},
-    AuthService,
+    models::{
+        ChangeUserRoleRequest, CreateUserRequest, InitAdminRequest, LoginRequest, Permission,
+        UserRole,
+    },
+    AuthService, AuthorizationEngine,
 };
-use locardx_common::LocardError;
 use locardx_database::Database;
 use std::sync::Arc;
 
-fn setup_test_auth_service() -> (AuthService, Arc<Database>) {
+fn setup_test_auth_service() -> (AuthService, Arc<Database>, Arc<AuditService>) {
     let db =
         Arc::new(Database::open(":memory:").expect("Failed to create in-memory test database"));
     let audit = Arc::new(AuditService::new(Arc::clone(&db)));
-    let auth = AuthService::new(Arc::clone(&db), audit);
-    (auth, db)
+    let auth = AuthService::new(Arc::clone(&db), Arc::clone(&audit));
+    (auth, db, audit)
+}
+
+// =========================================================================
+// 1. AUTHENTICATION TESTS (Points 1 to 10)
+// =========================================================================
+
+#[test]
+fn test_01_authentication_initializes_successfully() {
+    let (auth, _, _) = setup_test_auth_service();
+    assert!(auth.is_first_run().expect("is_first_run query failed"));
 }
 
 #[test]
-fn test_01_first_administrator_can_be_created() {
-    let (auth, _) = setup_test_auth_service();
+fn test_02_administrator_setup_requires_valid_credentials() {
+    let (auth, _, _) = setup_test_auth_service();
 
-    assert!(auth.is_first_run().expect("is_first_run failed"));
-
-    let req = InitAdminRequest {
-        username: "admin_user".to_string(),
-        password: "SuperSecretPassword123!".to_string(),
-        confirm_password: "SuperSecretPassword123!".to_string(),
-    };
-
-    let admin = auth
-        .initialize_admin(req)
-        .expect("Failed to initialize admin");
-    assert_eq!(admin.username, "admin_user");
-    assert_eq!(admin.role, UserRole::Administrator);
-    assert!(admin.enabled);
-    assert!(!auth.is_first_run().expect("is_first_run failed"));
-}
-
-#[test]
-fn test_02_second_first_run_administrator_cannot_be_created() {
-    let (auth, _) = setup_test_auth_service();
-
-    let req1 = InitAdminRequest {
-        username: "initial_admin".to_string(),
-        password: "AdminPassword123!".to_string(),
-        confirm_password: "AdminPassword123!".to_string(),
-    };
-    assert!(auth.initialize_admin(req1).is_ok());
-
-    // Attempt second setup
-    let req2 = InitAdminRequest {
-        username: "attacker_admin".to_string(),
-        password: "AttackerPass123!".to_string(),
-        confirm_password: "AttackerPass123!".to_string(),
-    };
-    let result = auth.initialize_admin(req2);
-    assert!(result.is_err(), "Second first-run setup must be rejected");
-
-    match result.unwrap_err() {
-        LocardError::SecurityViolation(msg) => {
-            assert!(
-                msg.contains("already been completed"),
-                "Unexpected error: {}",
-                msg
-            );
-        }
-        other => panic!("Expected SecurityViolation error, got: {:?}", other),
-    }
-}
-
-#[test]
-fn test_03_public_registration_is_unavailable() {
-    let (auth, _) = setup_test_auth_service();
-
-    // Init admin first
-    let _ = auth.initialize_admin(InitAdminRequest {
+    // Rejects weak password (<10 chars, missing special)
+    let weak_req = InitAdminRequest {
         username: "admin".to_string(),
-        password: "Password123!".to_string(),
-        confirm_password: "Password123!".to_string(),
-    });
-
-    // An unauthenticated request or random token cannot invoke user creation
-    let fake_token = "0000000000000000000000000000000000000000000000000000000000000000";
-    let req = CreateUserRequest {
-        username: "unauthorized_user".to_string(),
-        password: "UserPassword123!".to_string(),
-        role: UserRole::Investigator,
+        password: "short".to_string(),
+        confirm_password: "short".to_string(),
+        display_name: None,
     };
+    assert!(auth.initialize_admin(weak_req).is_err());
 
-    let result = auth.create_user(fake_token, req);
-    assert!(
-        result.is_err(),
-        "Unauthenticated user creation must be blocked"
-    );
+    // Rejects password confirmation mismatch
+    let mismatch_req = InitAdminRequest {
+        username: "admin".to_string(),
+        password: "StrongPassword123!".to_string(),
+        confirm_password: "MismatchPassword123!".to_string(),
+        display_name: None,
+    };
+    assert!(auth.initialize_admin(mismatch_req).is_err());
+
+    // Valid setup succeeds
+    let valid_req = InitAdminRequest::new("sysadmin", "StrongPassword123!");
+    let admin = auth.initialize_admin(valid_req).expect("Setup failed");
+    assert_eq!(admin.username, "sysadmin");
+    assert_eq!(admin.role, UserRole::Administrator);
+    assert!(!auth.is_first_run().expect("First run check failed"));
 }
 
 #[test]
-fn test_04_correct_password_authenticates() {
-    let (auth, _) = setup_test_auth_service();
+fn test_03_plaintext_password_is_never_stored() {
+    let (auth, db, _) = setup_test_auth_service();
+    let raw_pwd = "SecretPlaintextPassword123!";
 
-    let pwd = "StrongPassword2026!";
-    auth.initialize_admin(InitAdminRequest {
-        username: "forensic_admin".to_string(),
-        password: pwd.to_string(),
-        confirm_password: pwd.to_string(),
-    })
-    .expect("Init admin failed");
+    auth.initialize_admin(InitAdminRequest::new("crypto_admin", raw_pwd))
+        .expect("Init failed");
+
+    let stored_hash: String = db
+        .with_conn(|conn| {
+            let mut stmt =
+                conn.prepare("SELECT password_hash FROM users WHERE username = 'crypto_admin'")?;
+            stmt.query_row([], |r| r.get(0))
+        })
+        .expect("DB query failed");
+
+    assert_ne!(stored_hash, raw_pwd);
+    assert!(stored_hash.starts_with("$argon2id$"));
+}
+
+#[test]
+fn test_04_password_hash_verification_succeeds() {
+    let (auth, _, _) = setup_test_auth_service();
+    let pwd = "SuperSecretPassword123!";
+
+    auth.initialize_admin(InitAdminRequest::new("examiner_lead", pwd))
+        .expect("Init failed");
 
     let login_res = auth
         .login(LoginRequest {
-            username: "forensic_admin".to_string(),
+            username: "examiner_lead".to_string(),
             password: pwd.to_string(),
         })
         .expect("Login failed with correct password");
 
-    assert_eq!(login_res.user.username, "forensic_admin");
+    assert_eq!(login_res.user.username, "examiner_lead");
     assert!(!login_res.token.is_empty());
     assert!(login_res.expires_at > 0);
 }
 
 #[test]
 fn test_05_incorrect_password_fails_with_generic_message() {
-    let (auth, _) = setup_test_auth_service();
-
-    auth.initialize_admin(InitAdminRequest {
-        username: "target_user".to_string(),
-        password: "CorrectPassword123!".to_string(),
-        confirm_password: "CorrectPassword123!".to_string(),
-    })
-    .expect("Init admin failed");
+    let (auth, _, _) = setup_test_auth_service();
+    auth.initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .expect("Init failed");
 
     let result = auth.login(LoginRequest {
-        username: "target_user".to_string(),
-        password: "WrongPassword999!".to_string(),
+        username: "admin".to_string(),
+        password: "WrongPassword123!".to_string(),
     });
 
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let msg = result.unwrap_err().to_string();
     assert_eq!(
-        err_msg,
+        msg,
         "Security policy violation: Invalid username or password."
     );
 }
 
 #[test]
-fn test_06_user_enumeration_is_not_exposed_through_login_errors() {
-    let (auth, _) = setup_test_auth_service();
+fn test_06_unknown_user_returns_generic_failure() {
+    let (auth, _, _) = setup_test_auth_service();
+    auth.initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .expect("Init failed");
 
-    auth.initialize_admin(InitAdminRequest {
-        username: "existing_user".to_string(),
-        password: "ExistingPassword123!".to_string(),
-        confirm_password: "ExistingPassword123!".to_string(),
-    })
-    .expect("Init admin failed");
-
-    // Existing user with bad password
-    let res_existing = auth.login(LoginRequest {
-        username: "existing_user".to_string(),
-        password: "BadPassword123!".to_string(),
+    let res_known = auth.login(LoginRequest {
+        username: "admin".to_string(),
+        password: "WrongPassword123!".to_string(),
     });
 
-    // Non-existent user
-    let res_nonexistent = auth.login(LoginRequest {
-        username: "nonexistent_ghost".to_string(),
-        password: "BadPassword123!".to_string(),
+    let res_unknown = auth.login(LoginRequest {
+        username: "ghost_nonexistent_user".to_string(),
+        password: "WrongPassword123!".to_string(),
     });
 
-    assert!(res_existing.is_err());
-    assert!(res_nonexistent.is_err());
-
-    // Messages must be identical to defeat timing/enumeration attacks
     assert_eq!(
-        res_existing.unwrap_err().to_string(),
-        res_nonexistent.unwrap_err().to_string()
+        res_known.unwrap_err().to_string(),
+        res_unknown.unwrap_err().to_string()
     );
 }
 
 #[test]
-fn test_07_disabled_user_cannot_log_in() {
-    let (auth, _) = setup_test_auth_service();
-
+fn test_07_disabled_user_cannot_login() {
+    let (auth, _, _) = setup_test_auth_service();
     let admin_session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "root_admin".to_string(),
-            password: "AdminSecret123!".to_string(),
-            confirm_password: "AdminSecret123!".to_string(),
-        })
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
         .and_then(|_| {
             auth.login(LoginRequest {
-                username: "root_admin".to_string(),
-                password: "AdminSecret123!".to_string(),
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
             })
         })
         .expect("Admin setup failed");
 
-    let new_user = auth
+    let operator = auth
         .create_user(
             &admin_session.token,
-            CreateUserRequest {
-                username: "field_operator".to_string(),
-                password: "OperatorPass123!".to_string(),
-                role: UserRole::Operator,
-            },
+            CreateUserRequest::new("op1", "OperatorPass123!", UserRole::Operator),
         )
         .expect("Create user failed");
 
-    // Disable the operator
-    auth.set_user_enabled(&admin_session.token, &new_user.user_id, false)
+    auth.set_user_enabled(&admin_session.token, &operator.user_id, false)
         .expect("Disable user failed");
 
-    // Attempt login as disabled operator
-    let result = auth.login(LoginRequest {
-        username: "field_operator".to_string(),
+    let login_attempt = auth.login(LoginRequest {
+        username: "op1".to_string(),
         password: "OperatorPass123!".to_string(),
     });
 
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
+    assert!(login_attempt.is_err());
+    let err = login_attempt.unwrap_err().to_string();
     assert!(err.contains("Account is disabled"));
 }
 
 #[test]
-fn test_08_administrator_can_create_other_users() {
-    let (auth, _) = setup_test_auth_service();
-
-    let admin_session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "sysadmin".to_string(),
-            password: "SysAdminPassword123!".to_string(),
-            confirm_password: "SysAdminPassword123!".to_string(),
-        })
-        .and_then(|_| {
-            auth.login(LoginRequest {
-                username: "sysadmin".to_string(),
-                password: "SysAdminPassword123!".to_string(),
-            })
-        })
-        .expect("Setup failed");
-
-    let inv = auth
-        .create_user(
-            &admin_session.token,
-            CreateUserRequest {
-                username: "investigator_alice".to_string(),
-                password: "AlicePassword123!".to_string(),
-                role: UserRole::Investigator,
-            },
-        )
-        .expect("Failed to create investigator");
-    assert_eq!(inv.role, UserRole::Investigator);
-
-    let op = auth
-        .create_user(
-            &admin_session.token,
-            CreateUserRequest {
-                username: "operator_bob".to_string(),
-                password: "BobPassword123!".to_string(),
-                role: UserRole::Operator,
-            },
-        )
-        .expect("Failed to create operator");
-    assert_eq!(op.role, UserRole::Operator);
-
-    let vi = auth
-        .create_user(
-            &admin_session.token,
-            CreateUserRequest {
-                username: "viewer_charlie".to_string(),
-                password: "CharliePassword123!".to_string(),
-                role: UserRole::Viewer,
-            },
-        )
-        .expect("Failed to create viewer");
-    assert_eq!(vi.role, UserRole::Viewer);
-
-    let users = auth
-        .list_users(&admin_session.token)
-        .expect("list_users failed");
-    assert_eq!(users.len(), 4);
-}
-
-#[test]
-fn test_08b_administrator_can_create_another_administrator() {
-    let (auth, _) = setup_test_auth_service();
-
-    let admin_session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "root_admin".to_string(),
-            password: "RootAdminPassword123!".to_string(),
-            confirm_password: "RootAdminPassword123!".to_string(),
-        })
-        .and_then(|_| {
-            auth.login(LoginRequest {
-                username: "root_admin".to_string(),
-                password: "RootAdminPassword123!".to_string(),
-            })
-        })
-        .expect("Setup failed");
-
-    // Create a second administrator
-    let second_admin = auth
-        .create_user(
-            &admin_session.token,
-            CreateUserRequest {
-                username: "backup_admin".to_string(),
-                password: "BackupAdminPassword123!".to_string(),
-                role: UserRole::Administrator,
-            },
-        )
-        .expect("Administrator should be able to create another Administrator");
-
-    assert_eq!(second_admin.role, UserRole::Administrator);
-    assert_eq!(second_admin.username, "backup_admin");
-
-    // Verify the second administrator can authenticate successfully
-    let second_session = auth
-        .login(LoginRequest {
-            username: "backup_admin".to_string(),
-            password: "BackupAdminPassword123!".to_string(),
-        })
-        .expect("Second administrator should be able to log in");
-
-    assert_eq!(second_session.user.role, UserRole::Administrator);
-
-    // Verify the second administrator has full administrative rights to create users
-    let third_user = auth
-        .create_user(
-            &second_session.token,
-            CreateUserRequest {
-                username: "analyst_dave".to_string(),
-                password: "DavePassword123!".to_string(),
-                role: UserRole::Investigator,
-            },
-        )
-        .expect("Second administrator should be able to create users");
-
-    assert_eq!(third_user.role, UserRole::Investigator);
-}
-
-#[test]
-fn test_09_non_administrator_cannot_create_users() {
-    let (auth, _) = setup_test_auth_service();
-
-    let admin_session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "main_admin".to_string(),
-            password: "MainPassword123!".to_string(),
-            confirm_password: "MainPassword123!".to_string(),
-        })
-        .and_then(|_| {
-            auth.login(LoginRequest {
-                username: "main_admin".to_string(),
-                password: "MainPassword123!".to_string(),
-            })
-        })
-        .expect("Setup failed");
-
-    // Create an investigator
-    auth.create_user(
-        &admin_session.token,
-        CreateUserRequest {
-            username: "investigator_dan".to_string(),
-            password: "DanPassword123!".to_string(),
-            role: UserRole::Investigator,
-        },
-    )
-    .expect("Create user failed");
-
-    // Log in as investigator
-    let inv_session = auth
-        .login(LoginRequest {
-            username: "investigator_dan".to_string(),
-            password: "DanPassword123!".to_string(),
-        })
-        .expect("Investigator login failed");
-
-    // Investigator tries to create an account
-    let result = auth.create_user(
-        &inv_session.token,
-        CreateUserRequest {
-            username: "unauthorized_peer".to_string(),
-            password: "PeerPassword123!".to_string(),
-            role: UserRole::Viewer,
-        },
-    );
-
-    assert!(
-        result.is_err(),
-        "Non-admin must be barred from creating accounts"
-    );
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("Administrator privileges required"));
-}
-
-#[test]
-fn test_10_logout_invalidates_the_session() {
-    let (auth, _) = setup_test_auth_service();
-
+fn test_08_logout_invalidates_session() {
+    let (auth, _, _) = setup_test_auth_service();
     let session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "test_logout".to_string(),
-            password: "LogoutPassword123!".to_string(),
-            confirm_password: "LogoutPassword123!".to_string(),
-        })
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
         .and_then(|_| {
             auth.login(LoginRequest {
-                username: "test_logout".to_string(),
-                password: "LogoutPassword123!".to_string(),
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
             })
         })
-        .expect("Setup failed");
+        .expect("Login failed");
 
     assert!(auth.get_current_user(&session.token).is_ok());
 
-    // Perform logout
     auth.logout(&session.token).expect("Logout failed");
 
-    // Verify session token is now completely invalid
-    let post_logout = auth.get_current_user(&session.token);
-    assert!(post_logout.is_err());
+    assert!(auth.get_current_user(&session.token).is_err());
 }
 
 #[test]
-fn test_11_expired_session_is_rejected() {
-    let (auth, db) = setup_test_auth_service();
-
+fn test_09_expired_session_is_rejected() {
+    let (auth, db, _) = setup_test_auth_service();
     let session = auth
-        .initialize_admin(InitAdminRequest {
-            username: "expiry_user".to_string(),
-            password: "ExpiryPassword123!".to_string(),
-            confirm_password: "ExpiryPassword123!".to_string(),
-        })
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
         .and_then(|_| {
             auth.login(LoginRequest {
-                username: "expiry_user".to_string(),
-                password: "ExpiryPassword123!".to_string(),
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
             })
         })
-        .expect("Setup failed");
+        .expect("Login failed");
 
-    // Artificially expire the session in SQLite
-    let past_timestamp = 1000;
+    // Artificially expire the session
+    let past = 1000;
     db.with_conn(|conn| {
         conn.execute(
             "UPDATE sessions SET expires_at = ?1 WHERE token = ?2",
-            rusqlite::params![past_timestamp, session.token],
+            rusqlite::params![past, session.token],
         )?;
         Ok(())
     })
     .expect("DB update failed");
 
     let result = auth.get_current_user(&session.token);
-    assert!(result.is_err(), "Expired session must be rejected");
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("expired"));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("expired"));
 }
 
 #[test]
-fn test_12_password_is_never_stored_plaintext() {
-    let (auth, db) = setup_test_auth_service();
-
-    let raw_password = "SecretPlaintextPassword123!";
-    auth.initialize_admin(InitAdminRequest {
-        username: "crypto_user".to_string(),
-        password: raw_password.to_string(),
-        confirm_password: raw_password.to_string(),
-    })
-    .expect("Init failed");
-
-    let stored_hash: String = db
-        .with_conn(|conn| {
-            let mut stmt =
-                conn.prepare("SELECT password_hash FROM users WHERE username = 'crypto_user'")?;
-            stmt.query_row([], |r| r.get(0))
-        })
-        .expect("Query failed");
-
-    // Must NOT equal plaintext
-    assert_ne!(stored_hash, raw_password);
-    // Must be valid PHC Argon2id string
-    assert!(stored_hash.starts_with("$argon2id$"));
-}
-
-#[test]
-fn test_13_authentication_events_are_audited() {
-    let (auth, _) = setup_test_auth_service();
-
-    // Creating admin emits FIRST_ADMIN_CREATED
-    let _ = auth.initialize_admin(InitAdminRequest {
-        username: "audited_admin".to_string(),
-        password: "AuditPassword123!".to_string(),
-        confirm_password: "AuditPassword123!".to_string(),
-    });
-
-    // Login emits LOGIN_SUCCESS
+fn test_10_session_validation_succeeds_for_valid_session() {
+    let (auth, _, _) = setup_test_auth_service();
     let session = auth
-        .login(LoginRequest {
-            username: "audited_admin".to_string(),
-            password: "AuditPassword123!".to_string(),
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
         })
         .expect("Login failed");
 
-    // Change password emits PASSWORD_CHANGED
-    auth.change_password(
-        &session.token,
-        ChangePasswordRequest {
-            old_password: "AuditPassword123!".to_string(),
-            new_password: "NewAuditPassword123!".to_string(),
-        },
-    )
-    .expect("Change password failed");
+    let val = auth
+        .validate_session(&session.token)
+        .expect("validate_session call failed");
 
-    // Logout emits LOGOUT
-    auth.logout(&session.token).expect("Logout failed");
+    assert!(val.is_valid);
+    assert!(val.user.is_some());
+    assert!(val.time_remaining_seconds.unwrap_or(0) > 0);
+    assert!(!val.permissions.is_empty());
+}
+
+// =========================================================================
+// 2. REGISTRATION & ADMINISTRATION TESTS (Points 11 to 17)
+// =========================================================================
+
+#[test]
+fn test_11_public_registration_is_rejected() {
+    let (auth, _, _) = setup_test_auth_service();
+    let _ = auth.initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"));
+
+    // Attempt second setup
+    let req2 = InitAdminRequest::new("intruder", "IntruderPassword123!");
+    let res2 = auth.initialize_admin(req2);
+    assert!(res2.is_err(), "Second first-run setup must be rejected");
+
+    // Attempt unauthenticated user creation
+    let res3 = auth.create_user(
+        "invalid_fake_token_12345",
+        CreateUserRequest::new("unauth", "UnauthPassword123!", UserRole::Viewer),
+    );
+    assert!(res3.is_err(), "Public user creation must be rejected");
 }
 
 #[test]
-fn test_14_password_hashes_are_not_returned_to_frontend() {
-    let (auth, _) = setup_test_auth_service();
-
-    let admin = auth
-        .initialize_admin(InitAdminRequest {
-            username: "safe_admin".to_string(),
-            password: "SafePassword123!".to_string(),
-            confirm_password: "SafePassword123!".to_string(),
+fn test_12_authorized_administrator_can_create_a_user() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
         })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("investigator1", "InvPassword123!", UserRole::Investigator),
+        )
+        .expect("Create user failed");
+
+    assert_eq!(user.username, "investigator1");
+    assert_eq!(user.role, UserRole::Investigator);
+}
+
+#[test]
+fn test_13_unauthorized_user_cannot_create_a_user() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("inv1", "InvPassword123!", UserRole::Investigator),
+    )
+    .expect("Create user failed");
+
+    let inv_session = auth
+        .login(LoginRequest {
+            username: "inv1".to_string(),
+            password: "InvPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    // Investigator tries to create another user
+    let res = auth.create_user(
+        &inv_session.token,
+        CreateUserRequest::new("peer", "PeerPassword123!", UserRole::Operator),
+    );
+    assert!(res.is_err(), "Non-admin cannot create users");
+}
+
+#[test]
+fn test_14_duplicate_username_is_rejected() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("alice", "AlicePassword123!", UserRole::Investigator),
+    )
+    .expect("Create user failed");
+
+    let dup = auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("alice", "AnotherPassword123!", UserRole::Operator),
+    );
+    assert!(dup.is_err(), "Duplicate username must be rejected");
+}
+
+#[test]
+fn test_15_user_can_be_disabled() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("bob", "BobPassword123!", UserRole::Operator),
+        )
+        .expect("Create user failed");
+
+    auth.set_user_enabled(&admin_session.token, &user.user_id, false)
+        .expect("Disable failed");
+
+    let fetched = auth
+        .get_user(&admin_session.token, &user.user_id)
+        .expect("Fetch failed");
+    assert!(!fetched.enabled);
+}
+
+#[test]
+fn test_16_disabled_account_cannot_authenticate() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("carol", "CarolPassword123!", UserRole::Viewer),
+        )
+        .expect("Create user failed");
+
+    auth.set_user_enabled(&admin_session.token, &user.user_id, false)
+        .expect("Disable failed");
+
+    let res = auth.login(LoginRequest {
+        username: "carol".to_string(),
+        password: "CarolPassword123!".to_string(),
+    });
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Account is disabled"));
+}
+
+#[test]
+fn test_17_role_changes_require_authorization() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("dave", "DavePassword123!", UserRole::Operator),
+        )
+        .expect("Create user failed");
+
+    // Admin promotes dave to Investigator
+    let updated = auth
+        .change_user_role(
+            &admin_session.token,
+            ChangeUserRoleRequest {
+                user_id: user.user_id.clone(),
+                new_role: UserRole::Investigator,
+            },
+        )
+        .expect("Role change failed");
+    assert_eq!(updated.role, UserRole::Investigator);
+
+    // Sole admin demotion is blocked
+    let demote_admin = auth.change_user_role(
+        &admin_session.token,
+        ChangeUserRoleRequest {
+            user_id: admin_session.user.user_id,
+            new_role: UserRole::Operator,
+        },
+    );
+    assert!(demote_admin.is_err(), "Demoting sole admin must be blocked");
+}
+
+// =========================================================================
+// 3. AUTHORIZATION TESTS (Points 18 to 26)
+// =========================================================================
+
+#[test]
+fn test_18_unauthenticated_user_cannot_access_protected_commands() {
+    let (auth, _, _) = setup_test_auth_service();
+    let fake_token = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    let res = auth.authorize_permission(fake_token, Permission::CaseCreate);
+    assert!(res.is_err(), "Unauthenticated request must fail");
+}
+
+#[test]
+fn test_19_unauthorized_user_cannot_access_protected_commands() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("viewer_user", "ViewerPassword123!", UserRole::Viewer),
+    )
+    .expect("Create user failed");
+
+    let viewer_session = auth
+        .login(LoginRequest {
+            username: "viewer_user".to_string(),
+            password: "ViewerPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    // Viewer tries to create case
+    let res = auth.authorize_permission(&viewer_session.token, Permission::CaseCreate);
+    assert!(
+        res.is_err(),
+        "Viewer must not possess CaseCreate permission"
+    );
+}
+
+#[test]
+fn test_20_authorized_user_can_perform_permitted_action() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("lead_inv", "InvPassword123!", UserRole::Investigator),
+    )
+    .expect("Create user failed");
+
+    let inv_session = auth
+        .login(LoginRequest {
+            username: "lead_inv".to_string(),
+            password: "InvPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    let user = auth
+        .authorize_permission(&inv_session.token, Permission::CaseCreate)
+        .expect("Authorized user must succeed");
+    assert_eq!(user.username, "lead_inv");
+}
+
+#[test]
+fn test_21_erasure_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::ErasureExecute
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::ErasureExecute
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::ErasureExecute
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::ErasureExecute
+    ));
+}
+
+#[test]
+fn test_22_acquisition_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::AcquisitionStart
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::AcquisitionStart
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::AcquisitionStart
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::AcquisitionStart
+    ));
+}
+
+#[test]
+fn test_23_recovery_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::RecoveryStart
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::RecoveryStart
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::RecoveryStart
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::RecoveryStart
+    ));
+}
+
+#[test]
+fn test_24_case_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::CaseCreate
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::CaseCreate
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::CaseCreate
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::CaseCreate
+    ));
+}
+
+#[test]
+fn test_25_user_management_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::UserCreate
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::UserCreate
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::UserCreate
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::UserCreate
+    ));
+}
+
+#[test]
+fn test_26_audit_access_authorization_is_enforced() {
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Administrator,
+        Permission::AuditVerify
+    ));
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Investigator,
+        Permission::AuditVerify
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Operator,
+        Permission::AuditVerify
+    ));
+    assert!(!AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::AuditVerify
+    ));
+
+    // All roles can view audit
+    assert!(AuthorizationEngine::has_permission(
+        UserRole::Viewer,
+        Permission::AuditView
+    ));
+}
+
+// =========================================================================
+// 4. AUDIT INTEGRATION TESTS (Points 27 to 33)
+// =========================================================================
+
+#[test]
+fn test_27_successful_login_generates_appropriate_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    auth.initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
         .expect("Init failed");
 
-    let serialized = serde_json::to_string(&admin).expect("Serialization failed");
+    auth.login(LoginRequest {
+        username: "admin".to_string(),
+        password: "AdminPassword123!".to_string(),
+    })
+    .expect("Login failed");
 
-    // Assert that the JSON serialized response has NO "password_hash" field
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events.iter().any(|e| e.event_type == "LOGIN_SUCCESS"));
+}
+
+#[test]
+fn test_28_failed_login_generates_appropriate_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    auth.initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .expect("Init failed");
+
+    let _ = auth.login(LoginRequest {
+        username: "admin".to_string(),
+        password: "WrongPassword123!".to_string(),
+    });
+
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events.iter().any(|e| e.event_type == "LOGIN_FAILURE"));
+}
+
+#[test]
+fn test_29_logout_generates_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.logout(&session.token).expect("Logout failed");
+
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events.iter().any(|e| e.event_type == "LOGOUT"));
+}
+
+#[test]
+fn test_30_authorization_denial_generates_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("viewer1", "ViewerPassword123!", UserRole::Viewer),
+    )
+    .expect("Create user failed");
+
+    let viewer_session = auth
+        .login(LoginRequest {
+            username: "viewer1".to_string(),
+            password: "ViewerPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    let _ = auth.authorize_permission(&viewer_session.token, Permission::UserCreate);
+
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events
+        .iter()
+        .any(|e| e.event_type == "AUTHORIZATION_DENIED"));
+}
+
+#[test]
+fn test_31_user_creation_generates_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("newbie", "NewbiePassword123!", UserRole::Operator),
+    )
+    .expect("Create user failed");
+
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events.iter().any(|e| e.event_type == "USER_CREATED"));
+}
+
+#[test]
+fn test_32_role_change_generates_audit_event() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("promotee", "PromoteePassword123!", UserRole::Operator),
+        )
+        .expect("Create user failed");
+
+    auth.change_user_role(
+        &admin_session.token,
+        ChangeUserRoleRequest {
+            user_id: user.user_id,
+            new_role: UserRole::Investigator,
+        },
+    )
+    .expect("Change role failed");
+
+    let events = audit.list_events(10).expect("List audit failed");
+    assert!(events.iter().any(|e| e.event_type == "USER_ROLE_CHANGED"));
+}
+
+#[test]
+fn test_33_audit_chain_remains_valid() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let user = auth
+        .create_user(
+            &session.token,
+            CreateUserRequest::new("user_audited", "UserPassword123!", UserRole::Operator),
+        )
+        .expect("Create user failed");
+
+    let _ = auth.change_user_role(
+        &session.token,
+        ChangeUserRoleRequest {
+            user_id: user.user_id,
+            new_role: UserRole::Investigator,
+        },
+    );
+
+    let ver = audit.verify_chain().expect("Chain verify failed");
+    assert!(ver.is_valid);
+    assert!(ver.total_events >= 3);
+}
+
+// =========================================================================
+// 5. SECURITY INVARIANT TESTS (Points 34 to 40)
+// =========================================================================
+
+#[test]
+fn test_34_passwords_never_appear_in_logs() {
+    let (auth, _, audit) = setup_test_auth_service();
+    let secret = "SuperConfidentialPass999!";
+
+    auth.initialize_admin(InitAdminRequest::new("secret_admin", secret))
+        .expect("Init failed");
+
+    let events = audit.list_events(100).expect("List failed");
+    for event in events {
+        assert!(!event.details.contains(secret));
+        assert!(!event.details.contains("$argon2id$"));
+    }
+}
+
+#[test]
+fn test_35_passwords_never_appear_in_reports() {
+    let (auth, _, _) = setup_test_auth_service();
+    let user = auth
+        .initialize_admin(InitAdminRequest::new("admin", "Password123!"))
+        .expect("Init failed");
+
+    let serialized = serde_json::to_string(&user).expect("Serialize failed");
     assert!(!serialized.contains("password_hash"));
     assert!(!serialized.contains("$argon2id$"));
-    assert!(serialized.contains("\"username\":\"safe_admin\""));
-    assert!(serialized.contains("\"role\":\"Administrator\""));
 }
 
 #[test]
-fn test_15_rbac_viewer_denied_destructive_requests() {
-    use locardx_auth::AuthorizationEngine;
-    use locardx_common::OperationType;
+fn test_36_frontend_cannot_spoof_authenticated_identity() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
 
-    // Viewer cannot request destructive operations
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Viewer,
-        OperationType::DriveErasure
-    )
-    .is_err());
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Viewer,
-        OperationType::FileErasure
-    )
-    .is_err());
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Viewer,
-        OperationType::FolderErasure
-    )
-    .is_err());
+    let viewer = auth
+        .create_user(
+            &admin_session.token,
+            CreateUserRequest::new("viewer_spoof", "ViewerPassword123!", UserRole::Viewer),
+        )
+        .expect("Create user failed");
 
-    // Viewer CAN request read-only integrity operations
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Viewer,
-        OperationType::IntegrityHash
-    )
-    .is_ok());
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Viewer,
-        OperationType::IntegrityVerify
-    )
-    .is_ok());
+    let viewer_session = auth
+        .login(LoginRequest {
+            username: "viewer_spoof".to_string(),
+            password: "ViewerPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    // The viewer attempts to authorize as Administrator, but token resolves strictly to Viewer in DB
+    let auth_result = auth.authorize_permission(&viewer_session.token, Permission::UserCreate);
+    assert!(auth_result.is_err());
+    assert_ne!(viewer.role, UserRole::Administrator);
 }
 
 #[test]
-fn test_16_rbac_operator_and_admin_destructive_request_policy() {
-    use locardx_auth::AuthorizationEngine;
-    use locardx_common::OperationType;
+fn test_37_frontend_cannot_bypass_backend_authorization() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
 
-    // Operator and Admin can request/prepare destructive operations
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Operator,
-        OperationType::DriveErasure
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new(
+            "operator_bypass",
+            "OperatorPassword123!",
+            UserRole::Operator,
+        ),
     )
-    .is_ok());
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Administrator,
-        OperationType::DriveErasure
-    )
-    .is_ok());
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Investigator,
-        OperationType::FileErasure
-    )
-    .is_ok());
+    .expect("Create user failed");
 
-    // Unknown operation rejected for all roles
-    assert!(AuthorizationEngine::can_request_operation(
-        UserRole::Administrator,
-        OperationType::Unknown
+    let op_session = auth
+        .login(LoginRequest {
+            username: "operator_bypass".to_string(),
+            password: "OperatorPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    // Even if frontend UI showed "Create User", backend rejects it
+    let res = auth.create_user(
+        &op_session.token,
+        CreateUserRequest::new("hacker", "HackerPass123!", UserRole::Administrator),
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Access denied"));
+}
+
+#[test]
+fn test_38_session_token_cannot_be_reused_after_logout() {
+    let (auth, _, _) = setup_test_auth_service();
+    let session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    let token = session.token.clone();
+    auth.logout(&token).expect("Logout failed");
+
+    let res = auth.validate_session(&token).expect("Validate failed");
+    assert!(!res.is_valid);
+
+    let auth_res = auth.authorize_permission(&token, Permission::CaseView);
+    assert!(auth_res.is_err());
+}
+
+#[test]
+fn test_39_case_access_control_and_isolation() {
+    let (auth, _, _) = setup_test_auth_service();
+    let admin_session = auth
+        .initialize_admin(InitAdminRequest::new("admin", "AdminPassword123!"))
+        .and_then(|_| {
+            auth.login(LoginRequest {
+                username: "admin".to_string(),
+                password: "AdminPassword123!".to_string(),
+            })
+        })
+        .expect("Setup failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("inv_case", "InvPassword123!", UserRole::Investigator),
     )
-    .is_err());
+    .expect("Create user failed");
+
+    auth.create_user(
+        &admin_session.token,
+        CreateUserRequest::new("viewer_case", "ViewerPassword123!", UserRole::Viewer),
+    )
+    .expect("Create user failed");
+
+    let inv_session = auth
+        .login(LoginRequest {
+            username: "inv_case".to_string(),
+            password: "InvPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    let viewer_session = auth
+        .login(LoginRequest {
+            username: "viewer_case".to_string(),
+            password: "ViewerPassword123!".to_string(),
+        })
+        .expect("Login failed");
+
+    // Investigator can create and modify cases
+    assert!(auth
+        .authorize_permission(&inv_session.token, Permission::CaseCreate)
+        .is_ok());
+    assert!(auth
+        .authorize_permission(&inv_session.token, Permission::CaseModify)
+        .is_ok());
+    assert!(auth
+        .authorize_permission(&inv_session.token, Permission::CaseClose)
+        .is_ok());
+
+    // Viewer cannot mutate cases
+    assert!(auth
+        .authorize_permission(&viewer_session.token, Permission::CaseCreate)
+        .is_err());
+    assert!(auth
+        .authorize_permission(&viewer_session.token, Permission::CaseModify)
+        .is_err());
+    assert!(auth
+        .authorize_permission(&viewer_session.token, Permission::CaseClose)
+        .is_err());
+}
+
+#[test]
+fn test_40_existing_destructive_erasure_safety_tests_remain_intact() {
+    use locardx_security::SecurityEngine;
+
+    // Direct OS boot target C:\ is unconditionally blocked regardless of role
+    let c_drive_check = SecurityEngine::validate_target_safety("C:\\");
+    assert!(c_drive_check.is_err());
+    let err_msg = c_drive_check.unwrap_err().to_string();
+    assert!(err_msg.contains("System root partition cannot be modified"));
+
+    let unix_root_check = SecurityEngine::validate_target_safety("/");
+    assert!(unix_root_check.is_err());
+
+    let safe_external = SecurityEngine::validate_target_safety("\\\\.\\PhysicalDrive2");
+    assert!(safe_external.is_ok());
 }

@@ -1209,9 +1209,13 @@ impl DriveHardwareExecutor for WindowsDriveHardwareExecutor {
             ));
         }
 
+        let volumes = disk_to_volumes.get(&disk_num).cloned().unwrap_or_default();
+        let is_sys = system_disks.contains(&disk_num);
+        let dev = provider.build_physical_device(raw.clone(), volumes.clone(), is_sys);
+        crate::target::is_safe_external_erase_target(&dev)?;
+
         // 2. Lock and dismount any logical volumes residing on this disk
         let mut volume_handles = Vec::new();
-        let volumes = disk_to_volumes.get(&disk_num).cloned().unwrap_or_default();
         for vol in &volumes {
             if vol.is_system_volume || vol.is_boot_volume {
                 return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(

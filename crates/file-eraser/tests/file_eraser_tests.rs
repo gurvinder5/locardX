@@ -67,6 +67,7 @@ fn setup_test_service() -> (Arc<FileEraserService>, Arc<SafetyEngine>, String) {
         username: "admin".to_string(),
         password: "AdminPassword123!".to_string(),
         confirm_password: "AdminPassword123!".to_string(),
+        display_name: None,
     })
     .expect("Init admin failed");
 

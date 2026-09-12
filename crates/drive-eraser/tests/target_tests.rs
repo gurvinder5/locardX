@@ -110,18 +110,18 @@ fn test_toctou_mutation_serial_number_changed() {
     let mock_registry = MockDeviceRegistry::new_standard_test_set();
     let registry = Arc::new(mock_registry.clone()) as Arc<dyn DeviceDiscoveryProvider>;
 
-    // Initial snapshot of PhysicalDrive9
-    let (_, snapshot) = inspect_physical_device(r"\\.\PhysicalDrive9", &registry, 512).unwrap();
+    // Initial snapshot of internal fixed drive PhysicalDrive1
+    let (_, snapshot) = inspect_physical_device(r"\\.\PhysicalDrive1", &registry, 512).unwrap();
     assert_eq!(
         snapshot.serial_number,
-        Some("SERIAL-ORIGINAL-123".to_string())
+        Some("W1E89XYZ".to_string())
     );
 
     // Verify initial integrity check passes
     assert!(verify_live_device_integrity(&snapshot, &registry).is_ok());
 
-    // Attacker or hardware swap changes serial number
-    mock_registry.mutate_device(r"\\.\PhysicalDrive9", |dev| {
+    // Attacker or hardware swap changes serial number on internal fixed drive
+    mock_registry.mutate_device(r"\\.\PhysicalDrive1", |dev| {
         dev.serial_number = Some("SERIAL-ATTACKER-REPLACED-999".to_string());
     });
 

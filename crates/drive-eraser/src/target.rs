@@ -54,6 +54,79 @@ pub fn validate_physical_device_identifier(
     Ok(normalized)
 }
 
+/// Authorizes a physical device as a safe external erasure candidate.
+///
+/// Strictly blocks:
+/// - Any device flagged as a system device (`is_system_device == true`)
+/// - Any device with `classification == SystemDevice` or `BootDevice`
+/// - Any device hosting an active system or boot volume
+/// - Any device hosting the Windows OS root volume (e.g. `C:\`)
+/// - Primary system storage `PhysicalDrive0` when it hosts system partitions or is non-removable
+/// - Ambiguous or internal fixed devices that cannot be confirmed as external/removable
+pub fn is_safe_external_erase_target(
+    device: &PhysicalDevice,
+) -> Result<(), DriveEraseFailureReason> {
+    // 1. Explicit system device flag
+    if device.is_system_device {
+        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+            "Physical device '{}' is an active System or Boot Device. Destructive erasure is unconditionally blocked.",
+            device.device_id
+        )));
+    }
+
+    // 2. Safety classification must not be SystemDevice or BootDevice
+    if device.classification == DeviceClassification::SystemDevice
+        || device.classification == DeviceClassification::BootDevice
+    {
+        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+            "Physical device '{}' classification is {:?} (active System or Boot Device). Destructive erasure is unconditionally blocked.",
+            device.device_id, device.classification
+        )));
+    }
+
+    // 3. Check for any system or boot volumes hosted on this device
+    if device
+        .volumes
+        .iter()
+        .any(|v| v.is_system_volume || v.is_boot_volume)
+    {
+        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+            "Physical device '{}' contains an active System or Boot volume. Destructive erasure is unconditionally blocked.",
+            device.device_id
+        )));
+    }
+
+    // 4. Check for active OS drive letter (C: / C:\) in hosted volumes
+    for vol in &device.volumes {
+        if let Some(mount) = &vol.mount_point {
+            let trimmed = mount.trim_end_matches('\\').to_uppercase();
+            if trimmed == "C:" {
+                return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+                    "Physical device '{}' hosts the active Windows OS volume (C:). Destructive erasure is prohibited.",
+                    device.device_id
+                )));
+            }
+        }
+    }
+
+    // 5. Hard block on PhysicalDrive0 when it represents primary system storage
+    let norm = device.device_id.to_uppercase();
+    if norm == r"\\.\PHYSICALDRIVE0" || norm == "PHYSICALDRIVE0" {
+        if device.is_system_device
+            || device.classification == DeviceClassification::SystemDevice
+            || device.classification == DeviceClassification::BootDevice
+            || !device.removable
+        {
+            return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+                "Physical device '{}' is the primary system storage unit (PhysicalDrive0). Destructive erasure is prohibited.",
+                device.device_id
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Discovers the requested physical device and validates system/boot protections.
 pub fn inspect_physical_device(
     device_id: &str,
@@ -76,27 +149,8 @@ pub fn inspect_physical_device(
             ))
         })?;
 
-    // Hard System and Boot Block
-    if device.is_system_device
-        || device.classification == DeviceClassification::SystemDevice
-        || device.classification == DeviceClassification::BootDevice
-    {
-        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
-            "Physical device '{}' is an active System or Boot Device. Erasure is unconditionally blocked.",
-            device.device_id
-        )));
-    }
-
-    if device
-        .volumes
-        .iter()
-        .any(|v| v.is_system_volume || v.is_boot_volume)
-    {
-        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
-            "Physical device '{}' contains an active System or Boot volume. Erasure is unconditionally blocked.",
-            device.device_id
-        )));
-    }
+    // Hard System and Boot Block via Evidence-Based Authorization
+    is_safe_external_erase_target(&device)?;
 
     let snapshot = PhysicalDeviceSnapshot::from_device(&device, sector_size);
     Ok((device, snapshot))
@@ -120,6 +174,8 @@ pub fn verify_live_device_integrity(
                 snapshot.device_id
             ))
         })?;
+
+    is_safe_external_erase_target(&live_device)?;
 
     let live_snapshot = PhysicalDeviceSnapshot::from_device(&live_device, snapshot.sector_size);
 

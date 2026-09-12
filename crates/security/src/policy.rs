@@ -66,13 +66,11 @@ impl SafetyPolicy {
             | OperationType::IntegrityVerify
             | OperationType::SanitizationPlanEvaluation
             | OperationType::FileErasure
-            | OperationType::FolderErasure => {
+            | OperationType::FolderErasure
+            | OperationType::ForensicAcquisition
+            | OperationType::Recovery => {
                 // Supported operations
                 Ok(())
-            }
-            OperationType::Recovery => {
-                // Read-only recovery carving engine is currently disabled
-                Err(ReasonCode::OperationDisabled)
             }
             OperationType::DriveErasure => {
                 // Invariant: Real destructive drive erasure remains disabled in Step 10A (only simulation supported)

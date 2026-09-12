@@ -417,6 +417,272 @@ impl Database {
             );
         }
 
+        // Migration 010: Forensic Acquisition & Raw/DD Imaging Records
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS acquisition_records (
+                acquisition_id        TEXT PRIMARY KEY,
+                operation_id          TEXT NOT NULL UNIQUE,
+                actor_id              TEXT,
+                source_device_id      TEXT NOT NULL,
+                source_display_name   TEXT NOT NULL,
+                source_vendor         TEXT,
+                source_model          TEXT,
+                source_serial         TEXT,
+                source_media_type     TEXT NOT NULL,
+                source_capacity_bytes INTEGER NOT NULL,
+                source_sector_size    INTEGER NOT NULL,
+                source_bus_type       TEXT,
+                source_snapshot_json  TEXT NOT NULL,
+                destination_path      TEXT NOT NULL,
+                image_format          TEXT NOT NULL,
+                image_size_bytes      INTEGER NOT NULL,
+                image_sha256          TEXT NOT NULL,
+                status                TEXT NOT NULL,
+                bytes_acquired        INTEGER NOT NULL,
+                elapsed_seconds       REAL NOT NULL,
+                failure_reason        TEXT,
+                audit_reference       TEXT NOT NULL,
+                started_at            TEXT NOT NULL,
+                completed_at          TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_acq_records_op_id ON acquisition_records(operation_id);
+            CREATE INDEX IF NOT EXISTS idx_acq_records_source ON acquisition_records(source_device_id);
+            CREATE INDEX IF NOT EXISTS idx_acq_records_status ON acquisition_records(status);
+            CREATE INDEX IF NOT EXISTS idx_acq_records_completed ON acquisition_records(completed_at);
+            INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'));",
+        )
+        .map_err(|e| {
+            LocardError::Database(format!(
+                "Failed to execute migration 010 (acquisition records): {}",
+                e
+            ))
+        })?;
+
+        // Migration 011: Forensic File Recovery Schema
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS recovery_jobs (
+                job_id               TEXT PRIMARY KEY,
+                operation_id         TEXT NOT NULL UNIQUE,
+                actor_id             TEXT,
+                acquisition_id       TEXT NOT NULL,
+                source_image_path    TEXT NOT NULL,
+                source_image_sha256  TEXT NOT NULL,
+                recovery_mode        TEXT NOT NULL,
+                status               TEXT NOT NULL,
+                bytes_scanned        INTEGER NOT NULL DEFAULT 0,
+                files_recovered      INTEGER NOT NULL DEFAULT 0,
+                candidates_evaluated INTEGER NOT NULL DEFAULT 0,
+                elapsed_seconds      REAL NOT NULL DEFAULT 0.0,
+                failure_reason       TEXT,
+                audit_reference      TEXT NOT NULL,
+                started_at           TEXT NOT NULL,
+                completed_at         TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS recovery_sources (
+                source_id            TEXT PRIMARY KEY,
+                acquisition_id       TEXT NOT NULL,
+                image_path           TEXT NOT NULL,
+                image_size_bytes     INTEGER NOT NULL,
+                image_sha256         TEXT NOT NULL,
+                original_device_id   TEXT NOT NULL,
+                original_serial      TEXT,
+                verified_at          TEXT NOT NULL,
+                is_trusted           INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE TABLE IF NOT EXISTS recovered_files (
+                file_id              TEXT PRIMARY KEY,
+                job_id               TEXT NOT NULL,
+                source_offset        INTEGER NOT NULL,
+                size_bytes           INTEGER NOT NULL,
+                file_type            TEXT NOT NULL,
+                mime_type            TEXT NOT NULL,
+                suggested_filename   TEXT NOT NULL,
+                recovery_method      TEXT NOT NULL,
+                validation_status    TEXT NOT NULL,
+                confidence_score     INTEGER NOT NULL,
+                confidence_grade     TEXT NOT NULL,
+                is_fragmented        INTEGER NOT NULL DEFAULT 0,
+                sha256_hash          TEXT NOT NULL,
+                output_relative_path TEXT,
+                evidence_factors_json TEXT NOT NULL,
+                created_at           TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS recovery_fragments (
+                fragment_id          TEXT PRIMARY KEY,
+                file_id              TEXT NOT NULL,
+                fragment_index       INTEGER NOT NULL,
+                source_offset        INTEGER NOT NULL,
+                size_bytes           INTEGER NOT NULL,
+                fragment_type        TEXT NOT NULL,
+                confidence           REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS recovery_reports (
+                report_id            TEXT PRIMARY KEY,
+                job_id               TEXT NOT NULL UNIQUE,
+                report_digest        TEXT NOT NULL,
+                audit_reference      TEXT NOT NULL,
+                report_json          TEXT NOT NULL,
+                generated_at         TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_recovery_jobs_op_id ON recovery_jobs(operation_id);
+            CREATE INDEX IF NOT EXISTS idx_recovery_jobs_acq_id ON recovery_jobs(acquisition_id);
+            CREATE INDEX IF NOT EXISTS idx_recovery_jobs_status ON recovery_jobs(status);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_job ON recovered_files(job_id);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_type ON recovered_files(file_type);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_method ON recovered_files(recovery_method);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_validation ON recovered_files(validation_status);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_confidence ON recovered_files(confidence_score);
+            CREATE INDEX IF NOT EXISTS idx_recovered_files_created ON recovered_files(created_at);
+            CREATE INDEX IF NOT EXISTS idx_recovery_fragments_file ON recovery_fragments(file_id);
+            INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (11, datetime('now'));",
+        )
+        .map_err(|e| {
+            LocardError::Database(format!(
+                "Failed to execute migration 011 (recovery schema): {}",
+                e
+            ))
+        })?;
+
+        // Migration 012: Unified Case Management, Cross-Module Evidence, Chain of Custody, and Reports
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS cases (
+                case_id           TEXT PRIMARY KEY,
+                case_reference    TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                title             TEXT NOT NULL,
+                description       TEXT NOT NULL,
+                status            TEXT NOT NULL DEFAULT 'Open',
+                lead_investigator TEXT NOT NULL,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                closed_at         TEXT,
+                metadata_json     TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_cases_ref ON cases(case_reference);
+            CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
+            CREATE INDEX IF NOT EXISTS idx_cases_actor ON cases(lead_investigator);
+            CREATE INDEX IF NOT EXISTS idx_cases_created ON cases(created_at);
+
+            CREATE TABLE IF NOT EXISTS case_operations (
+                id                TEXT PRIMARY KEY,
+                case_id           TEXT NOT NULL,
+                operation_id      TEXT NOT NULL,
+                operation_type    TEXT NOT NULL,
+                associated_by     TEXT NOT NULL,
+                associated_at     TEXT NOT NULL,
+                notes             TEXT,
+                FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE RESTRICT,
+                UNIQUE(case_id, operation_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_case_ops_case ON case_operations(case_id);
+            CREATE INDEX IF NOT EXISTS idx_case_ops_op ON case_operations(operation_id);
+            CREATE INDEX IF NOT EXISTS idx_case_ops_type ON case_operations(operation_type);
+
+            CREATE TABLE IF NOT EXISTS case_evidence (
+                evidence_id       TEXT PRIMARY KEY,
+                case_id           TEXT NOT NULL,
+                evidence_type     TEXT NOT NULL,
+                identifier        TEXT NOT NULL,
+                label             TEXT NOT NULL,
+                sha256            TEXT,
+                size_bytes        INTEGER,
+                introduced_by     TEXT NOT NULL,
+                introduced_at     TEXT NOT NULL,
+                status            TEXT NOT NULL DEFAULT 'Active',
+                notes             TEXT,
+                FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_case_evidence_case ON case_evidence(case_id);
+            CREATE INDEX IF NOT EXISTS idx_case_evidence_type ON case_evidence(evidence_type);
+            CREATE INDEX IF NOT EXISTS idx_case_evidence_id ON case_evidence(identifier);
+            CREATE INDEX IF NOT EXISTS idx_case_evidence_sha256 ON case_evidence(sha256);
+
+            CREATE TABLE IF NOT EXISTS case_custody (
+                custody_id        TEXT PRIMARY KEY,
+                case_id           TEXT NOT NULL,
+                evidence_id       TEXT,
+                event_type        TEXT NOT NULL,
+                actor_id          TEXT NOT NULL,
+                timestamp         TEXT NOT NULL,
+                action            TEXT NOT NULL,
+                details           TEXT NOT NULL,
+                audit_event_id    TEXT,
+                audit_hash        TEXT,
+                FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE RESTRICT,
+                FOREIGN KEY (evidence_id) REFERENCES case_evidence(evidence_id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_case_custody_case ON case_custody(case_id);
+            CREATE INDEX IF NOT EXISTS idx_case_custody_evidence ON case_custody(evidence_id);
+            CREATE INDEX IF NOT EXISTS idx_case_custody_time ON case_custody(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_case_custody_type ON case_custody(event_type);
+
+            CREATE TABLE IF NOT EXISTS case_reports (
+                report_id             TEXT PRIMARY KEY,
+                case_id               TEXT NOT NULL,
+                report_type           TEXT NOT NULL,
+                title                 TEXT NOT NULL,
+                report_digest         TEXT NOT NULL,
+                audit_chain_reference TEXT NOT NULL,
+                generated_by          TEXT NOT NULL,
+                generated_at          TEXT NOT NULL,
+                report_json           TEXT NOT NULL,
+                report_markdown       TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS idx_case_reports_case ON case_reports(case_id);
+            CREATE INDEX IF NOT EXISTS idx_case_reports_type ON case_reports(report_type);
+            CREATE INDEX IF NOT EXISTS idx_case_reports_created ON case_reports(generated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_ref);
+
+            INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (12, datetime('now'));",
+        )
+        .map_err(|e| {
+            LocardError::Database(format!(
+                "Failed to execute migration 012 (cases schema): {}",
+                e
+            ))
+        })?;
+
+        // Migration 013: Authentication & Role-Based Access Control Enhancements
+        let migration_13_applied: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 13",
+                [],
+                |row| {
+                    let count: i64 = row.get(0)?;
+                    Ok(count > 0)
+                },
+            )
+            .unwrap_or(false);
+
+        if !migration_13_applied {
+            let _ = conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT;", []);
+            let _ = conn.execute(
+                "ALTER TABLE users ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_enabled ON users(enabled);",
+                [],
+            );
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (13, datetime('now'));",
+                [],
+            );
+        }
+
         info!("SQLite schema and migrations verified.");
         Ok(())
     }

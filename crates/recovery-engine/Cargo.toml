@@ -5,4 +5,19 @@ edition.workspace = true
 description = "LocardX forensic file carving and recovery engine"
 
 [dependencies]
-locardx-common = { path = "../common" }
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-acquisition = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.27"

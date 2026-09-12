@@ -9,6 +9,7 @@ import * as authService from '../services/auth';
 interface AuthState {
   currentUser: PublicUser | null;
   sessionToken: string | null;
+  permissions: string[];
   isFirstRun: boolean | null;
   isLoading: boolean;
   error: string | null;
@@ -17,6 +18,8 @@ interface AuthState {
   initAdmin: (req: InitAdminRequest) => Promise<void>;
   login: (req: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
+  validateCurrentSession: () => Promise<boolean>;
+  hasPermission: (permission: string) => boolean;
   clearError: () => void;
 }
 
@@ -34,20 +37,57 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
 export const useAuthStore = create<AuthState>((set, get) => ({
   currentUser: null,
   sessionToken: null,
+  permissions: [],
   isFirstRun: null,
   isLoading: true,
   error: null,
 
   clearError: () => set({ error: null }),
 
+  hasPermission: (permission: string) => {
+    const { permissions, currentUser } = get();
+    if (!currentUser) return false;
+    if (currentUser.role === 'Administrator') return true;
+    return permissions.includes(permission);
+  },
+
   checkFirstRun: async () => {
     try {
       set({ isLoading: true, error: null });
-      const firstRun = await authService.isFirstRun();
-      set({ isFirstRun: firstRun, isLoading: false });
+      const status = await authService.getAuthenticationStatus();
+      set({ isFirstRun: status.is_first_run, isLoading: false });
     } catch (err: unknown) {
       const msg = extractErrorMessage(err, 'Failed to verify system status');
       set({ error: msg, isLoading: false });
+    }
+  },
+
+  validateCurrentSession: async () => {
+    const token = get().sessionToken;
+    if (!token) return false;
+    try {
+      const res = await authService.validateSession(token);
+      if (res.is_valid && res.user) {
+        set({
+          currentUser: res.user,
+          permissions: res.permissions,
+        });
+        return true;
+      } else {
+        set({
+          currentUser: null,
+          sessionToken: null,
+          permissions: [],
+        });
+        return false;
+      }
+    } catch {
+      set({
+        currentUser: null,
+        sessionToken: null,
+        permissions: [],
+      });
+      return false;
     }
   },
 
@@ -63,6 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         currentUser: session.user,
         sessionToken: session.token,
+        permissions: session.permissions || [],
         isFirstRun: false,
         isLoading: false,
       });
@@ -87,6 +128,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         currentUser: session.user,
         sessionToken: session.token,
+        permissions: session.permissions || [],
         isLoading: false,
       });
     } catch (err: unknown) {
@@ -108,6 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       currentUser: null,
       sessionToken: null,
+      permissions: [],
       error: null,
     });
   },

@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/acquisition",
     "crates/audit",
     "crates/auth",
+    "crates/case-management",
     "crates/common",
     "crates/database",
     "crates/device-manager",
@@ -45,6 +47,7 @@ locardx-common = { path = "crates/common" }
 locardx-database = { path = "crates/database" }
 locardx-audit = { path = "crates/audit" }
 locardx-auth = { path = "crates/auth" }
+locardx-case-management = { path = "crates/case-management" }
 locardx-device-manager = { path = "crates/device-manager" }
 locardx-operation-manager = { path = "crates/operation-manager" }
 locardx-verification = { path = "crates/verification" }
@@ -52,4 +55,6 @@ locardx-reporting = { path = "crates/reporting" }
 locardx-security = { path = "crates/security" }
 locardx-drive-eraser = { path = "crates/drive-eraser" }
 locardx-file-eraser = { path = "crates/file-eraser" }
+locardx-acquisition = { path = "crates/acquisition" }
 locardx-recovery-engine = { path = "crates/recovery-engine" }
+

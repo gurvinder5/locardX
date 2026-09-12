@@ -12,6 +12,7 @@ pub fn init_application() -> Result<AppState, LocardError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_app_initialization() {
@@ -78,7 +79,6 @@ mod tests {
 
     #[test]
     fn test_integrity_commands() {
-        use std::io::Write;
         std::env::set_var("LOCARDX_ENV", "test");
         std::env::set_var("LOCARDX_DB_PATH", ":memory:");
 
@@ -124,7 +124,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_operation_commands() {
-        use std::io::Write;
         std::env::set_var("LOCARDX_ENV", "test");
         std::env::set_var("LOCARDX_DB_PATH", ":memory:");
 
@@ -181,6 +180,7 @@ mod tests {
                 username: "safety_admin".to_string(),
                 password: "AdminPassword123!".to_string(),
                 confirm_password: "AdminPassword123!".to_string(),
+                display_name: None,
             },
         )
         .unwrap();
@@ -362,6 +362,7 @@ mod tests {
                 username: "testadmin_fe".to_string(),
                 password: "SecretPass123!".to_string(),
                 confirm_password: "SecretPass123!".to_string(),
+                display_name: None,
             },
         )
         .unwrap();
@@ -552,5 +553,410 @@ mod tests {
         )
         .await;
         assert!(real_exec_result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_acquisition_commands() {
+        std::env::set_var("LOCARDX_ENV", "test");
+        std::env::set_var("LOCARDX_DB_PATH", ":memory:");
+
+        let state = init_application().unwrap();
+
+        // 1. List acquisition sources
+        let sources = commands::list_acquisition_sources_handler(&state).unwrap();
+        assert!(
+            !sources.is_empty(),
+            "Should discover acquisition sources in test env"
+        );
+
+        // 2. Validate source: reject logical drive letters
+        let logical_val = commands::validate_acquisition_source_handler(r"C:\").unwrap();
+        assert!(!logical_val.valid, "Should reject C:\\ drive letter");
+
+        let physical_val =
+            commands::validate_acquisition_source_handler(r"\\.\PhysicalDrive1").unwrap();
+        assert!(physical_val.valid, "Should accept physical drive path");
+
+        // 3. Validate destination
+        let dest_req = commands::ValidateDestinationRequest {
+            destination_path: r"C:\forensics\case01.raw".to_string(),
+            source_device_id: r"\\.\PhysicalDrive1".to_string(),
+            required_capacity_bytes: 1024 * 1024,
+            allow_overwrite: false,
+        };
+        let dest_val =
+            commands::validate_acquisition_destination_handler(&state, &dest_req).unwrap();
+        // Since C:\forensics might not exist on arbitrary OS, dest_val is either valid or reports directory error without crashing
+        assert!(!dest_val.message.is_empty());
+
+        // 4. Progress and result retrieval on non-existent op
+        let prog = commands::get_acquisition_progress_handler(&state, "op-none").unwrap();
+        assert!(prog.is_none());
+
+        let res = commands::get_acquisition_result_handler(&state, "op-none").unwrap();
+        assert!(res.is_none());
+
+        // 5. Cancellation on non-existent op returns false
+        let cancelled = commands::cancel_acquisition_handler(&state, "op-none").unwrap();
+        assert!(!cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_recovery_commands() {
+        use locardx_acquisition::{AcquisitionArtifact, AcquisitionDeviceSnapshot};
+        use locardx_recovery_engine::models::{RecoveryOptions, RecoveryStatus};
+
+        std::env::set_var("LOCARDX_ENV", "test");
+        std::env::set_var("LOCARDX_DB_PATH", ":memory:");
+
+        let state = init_application().unwrap();
+
+        // 1. Create synthetic evidence raw file
+        let temp_path =
+            std::env::temp_dir().join(format!("rec_desktop_test_{}.raw", uuid::Uuid::new_v4()));
+        let mut img_data = vec![0u8; 64 * 1024]; // 64 KiB
+                                                 // Inject JPEG at 4096
+        let mut jpeg_bytes = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        jpeg_bytes.extend_from_slice(b"JFIF      ");
+        jpeg_bytes.extend_from_slice(&[
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 0x01,
+        ]);
+        jpeg_bytes.extend_from_slice(&[0xFF, 0xD9]);
+        img_data[4096..4096 + jpeg_bytes.len()].copy_from_slice(&jpeg_bytes);
+        std::fs::write(&temp_path, &img_data).unwrap();
+
+        let sha256_hash = locardx_recovery_engine::compute_streaming_sha256(&temp_path).unwrap();
+
+        let artifact = AcquisitionArtifact {
+            acquisition_id: "acq-desktop-rec-1".to_string(),
+            image_path: temp_path.to_string_lossy().to_string(),
+            image_format: "raw".to_string(),
+            image_size_bytes: img_data.len() as u64,
+            image_sha256: sha256_hash.clone(),
+            source_device_snapshot: AcquisitionDeviceSnapshot {
+                device_id: "\\\\.\\PhysicalDrive1".to_string(),
+                display_name: "Test Virtual Disk".to_string(),
+                vendor: Some("LocardX".to_string()),
+                model: Some("Forensic Virtual Disk".to_string()),
+                serial_number: Some("SN-TEST-REC".to_string()),
+                media_type: "HDD".to_string(),
+                capacity_bytes: img_data.len() as u64,
+                sector_size: 512,
+                bus_type: Some("USB".to_string()),
+                is_removable: true,
+                is_system: false,
+                snapshot_timestamp: "2026-09-12T00:00:00Z".to_string(),
+            },
+            acquisition_timestamp: "2026-09-12T00:00:00Z".to_string(),
+            is_verified: true,
+            audit_reference: "audit-desk-rec-1".to_string(),
+        };
+
+        // 2. Validate source
+        let src_snap = state
+            .recovery
+            .validate_source(&artifact, None)
+            .expect("Should validate source");
+        assert_eq!(src_snap.acquisition_id, "acq-desktop-rec-1");
+
+        // 3. List sources
+        let sources = state.recovery.list_sources().expect("Should list sources");
+        assert!(!sources.is_empty());
+
+        // 4. Create plan
+        let plan = state
+            .recovery
+            .create_plan(&artifact, RecoveryOptions::default(), None)
+            .expect("Should create plan");
+
+        // 5. Execute recovery
+        let result = state
+            .recovery
+            .execute_recovery(&plan, None)
+            .expect("Should execute recovery");
+        assert_eq!(result.status, RecoveryStatus::Completed);
+        assert_eq!(result.files_recovered, 1);
+
+        // 6. List jobs and get report
+        let jobs = state
+            .recovery
+            .list_jobs()
+            .expect("Should list recovery jobs");
+        assert!(!jobs.is_empty());
+
+        let report = state
+            .recovery
+            .get_report(&result.job_id)
+            .expect("Should fetch report")
+            .expect("Report should exist");
+        assert_eq!(report.total_files_recovered, 1);
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[tokio::test]
+    async fn test_case_management_commands() {
+        use locardx_auth::UserRole;
+        use locardx_case_management::models::*;
+
+        std::env::set_var("LOCARDX_ENV", "test");
+        std::env::set_var("LOCARDX_DB_PATH", ":memory:");
+
+        let state = init_application().unwrap();
+
+        let actor =
+            state
+                .auth
+                .get_current_user("admin-test-token")
+                .unwrap_or(locardx_auth::PublicUser {
+                    user_id: "admin-id".to_string(),
+                    username: "admin".to_string(),
+                    role: UserRole::Administrator,
+                    display_name: None,
+                    enabled: true,
+                    created_at: "2026-09-12T00:00:00Z".to_string(),
+                    updated_at: "2026-09-12T00:00:00Z".to_string(),
+                    last_login_at: None,
+                    metadata_json: "{}".to_string(),
+                });
+
+        // 1. Create Case
+        let create_req = CreateCaseRequest {
+            case_reference: "TAURI-CASE-01".to_string(),
+            title: "Desktop Case Integration Test".to_string(),
+            description: "End-to-end verification of Tauri IPC Case Management".to_string(),
+            metadata_json: None,
+        };
+        let case = state
+            .case_service
+            .create_case(create_req, &actor)
+            .expect("Should create case via service");
+        assert_eq!(case.case_reference, "TAURI-CASE-01");
+        assert_eq!(case.status, CaseStatus::Open);
+
+        // 2. Query Case
+        let fetched = state
+            .case_service
+            .get_case(&case.case_id)
+            .expect("Should get case")
+            .expect("Case should exist");
+        assert_eq!(fetched.case_id, case.case_id);
+
+        // 3. List Cases
+        let (cases, count) = state
+            .case_service
+            .list_cases(None, 10, 0)
+            .expect("Should list cases");
+        assert!(count >= 1);
+        assert!(cases.iter().any(|c| c.case_id == case.case_id));
+
+        // 4. Update Case
+        let update_req = UpdateCaseRequest {
+            title: Some("Updated Desktop Case".to_string()),
+            description: None,
+            metadata_json: None,
+        };
+        let updated = state
+            .case_service
+            .update_case(&case.case_id, update_req, &actor)
+            .expect("Should update case");
+        assert_eq!(updated.title, "Updated Desktop Case");
+
+        // 5. Add Evidence
+        let ev_req = AddEvidenceRequest {
+            evidence_type: EvidenceType::PhysicalStorage,
+            identifier: r"\\.\PhysicalDrive1".to_string(),
+            label: "USB Flash Drive 32GB".to_string(),
+            sha256: None,
+            size_bytes: Some(32000000000),
+            notes: Some("Tag: EV-001".to_string()),
+        };
+        let evidence = state
+            .case_service
+            .add_case_evidence(&case.case_id, ev_req, &actor)
+            .expect("Should add evidence");
+        assert_eq!(evidence.label, "USB Flash Drive 32GB");
+
+        // 6. Associate Operation
+        let op = state
+            .case_service
+            .associate_operation(
+                &case.case_id,
+                "op-desktop-1",
+                "ForensicAcquisition",
+                &actor,
+                Some("Linked imaging operation"),
+            )
+            .expect("Should associate operation");
+        assert_eq!(op.operation_id, "op-desktop-1");
+
+        // 7. Record Custody Event
+        let cust_req = RecordCustodyRequest {
+            evidence_id: Some(evidence.evidence_id.clone()),
+            event_type: CustodyEventType::EvidenceVerified,
+            action: "Hardware serial cross-check".to_string(),
+            details: "Confirmed serial matches police seizure report".to_string(),
+        };
+        let cust = state
+            .case_service
+            .record_custody_event(&case.case_id, cust_req, &actor)
+            .expect("Should record custody event");
+        assert_eq!(cust.action, "Hardware serial cross-check");
+
+        // 8. Timeline & Summary
+        let timeline = state
+            .case_service
+            .get_case_timeline(&case.case_id)
+            .expect("Should fetch timeline");
+        assert!(!timeline.is_empty());
+
+        let summary = state
+            .case_service
+            .get_case_summary(&case.case_id)
+            .expect("Should fetch summary");
+        assert_eq!(summary.operation_count, 1);
+        assert_eq!(summary.evidence_count, 1);
+
+        // 9. Generate Report
+        let report = state
+            .case_service
+            .generate_case_report(&case.case_id, &actor)
+            .expect("Should generate report");
+        assert!(!report.report_id.is_empty());
+        assert!(state.case_service.verify_case_report(&report));
+
+        // 10. Audit Chain Verification
+        let audit_ver = state
+            .audit
+            .verify_chain()
+            .expect("Should verify audit chain");
+        assert!(audit_ver.is_valid);
+    }
+
+    #[test]
+    fn test_desktop_auth_lifecycle_and_rbac_handlers() {
+        use locardx_auth::models::{
+            ChangeUserRoleRequest, CreateUserRequest, InitAdminRequest, LoginRequest, Permission,
+            UpdateUserRequest, UserRole,
+        };
+
+        std::env::set_var("LOCARDX_ENV", "test");
+        std::env::set_var("LOCARDX_DB_PATH", ":memory:");
+
+        let state = init_application().unwrap();
+
+        // 1. First-run status check
+        let status =
+            commands::get_authentication_status_handler(&state).expect("Should get auth status");
+        assert!(status.is_first_run);
+        assert!(!status.initialized);
+
+        // 2. Initialize administrator
+        let admin_req = InitAdminRequest {
+            username: "desktop_admin".to_string(),
+            password: "CorrectAdminPassword123!".to_string(),
+            confirm_password: "CorrectAdminPassword123!".to_string(),
+            display_name: Some("Lead Administrator".to_string()),
+        };
+        let admin =
+            commands::initialize_admin_handler(&state, admin_req).expect("Should initialize admin");
+        assert_eq!(admin.username, "desktop_admin");
+        assert_eq!(admin.role, UserRole::Administrator);
+
+        // 3. Status now reports initialized
+        let status2 = commands::get_authentication_status_handler(&state)
+            .expect("Should get updated auth status");
+        assert!(!status2.is_first_run);
+        assert!(status2.initialized);
+
+        // 4. Closed registration invariant: second admin bootstrap fails
+        let re_init = commands::initialize_admin_handler(
+            &state,
+            InitAdminRequest {
+                username: "intruder".to_string(),
+                password: "Password123!".to_string(),
+                confirm_password: "Password123!".to_string(),
+                display_name: None,
+            },
+        );
+        assert!(re_init.is_err(), "Second bootstrap must be rejected");
+
+        // 5. Login
+        let login_res = commands::login_handler(
+            &state,
+            LoginRequest {
+                username: "desktop_admin".to_string(),
+                password: "CorrectAdminPassword123!".to_string(),
+            },
+        )
+        .expect("Admin should log in");
+        let admin_tok = login_res.token;
+
+        // 6. Validate session
+        let val_res = commands::validate_session_handler(&state, &admin_tok)
+            .expect("Session validation should succeed");
+        assert!(val_res.is_valid);
+        assert!(val_res.permissions.contains(&"UserCreate".to_string()));
+
+        // 7. Create user
+        let new_user = commands::create_user_handler(
+            &state,
+            &admin_tok,
+            CreateUserRequest {
+                username: "desktop_inv".to_string(),
+                password: "InvestigatorPass123!".to_string(),
+                role: UserRole::Investigator,
+                display_name: Some("Forensic Investigator".to_string()),
+                metadata_json: None,
+            },
+        )
+        .expect("Should create investigator user");
+        assert_eq!(new_user.username, "desktop_inv");
+
+        // 8. Update user
+        let updated = commands::update_user_handler(
+            &state,
+            &admin_tok,
+            UpdateUserRequest {
+                user_id: new_user.user_id.clone(),
+                display_name: Some("Senior Investigator".to_string()),
+                metadata_json: None,
+            },
+        )
+        .expect("Should update user");
+        assert_eq!(updated.display_name.as_deref(), Some("Senior Investigator"));
+
+        // 9. Change user role
+        let role_res = commands::change_user_role_handler(
+            &state,
+            &admin_tok,
+            ChangeUserRoleRequest {
+                user_id: new_user.user_id.clone(),
+                new_role: UserRole::Operator,
+            },
+        )
+        .expect("Should change user role");
+        assert_eq!(role_res.role, UserRole::Operator);
+
+        // 10. Disable and re-enable user
+        commands::disable_user_handler(&state, &admin_tok, &new_user.user_id)
+            .expect("Should disable user");
+        commands::enable_user_handler(&state, &admin_tok, &new_user.user_id)
+            .expect("Should enable user");
+
+        // 11. Check permission handlers
+        let has_perm =
+            commands::check_permission_handler(&state, &admin_tok, Permission::UserCreate)
+                .expect("Check permission handler should run");
+        assert!(has_perm);
+
+        let perms = commands::get_current_permissions_handler(&state, &admin_tok)
+            .expect("Get permissions handler should run");
+        assert!(!perms.is_empty());
+
+        // 12. Logout
+        commands::logout_handler(&state, &admin_tok).expect("Logout should succeed");
+        let post_logout = commands::validate_session_handler(&state, &admin_tok)
+            .expect("Session check after logout");
+        assert!(!post_logout.is_valid);
     }
 }

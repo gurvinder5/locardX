@@ -66,6 +66,7 @@ fn test_security_invariant_client_cannot_force_destructive_execution() {
         username: "admin_user".to_string(),
         password: "AdminPassword123!".to_string(),
         confirm_password: "AdminPassword123!".to_string(),
+        display_name: None,
     })
     .unwrap();
 

@@ -47,4 +47,15 @@ impl DeviceManagerService {
     pub fn refresh(&self) -> Result<Vec<StorageDeviceDto>, LocardError> {
         self.list_devices_dto()
     }
+
+    /// Returns a reference to the underlying discovery provider.
+    pub fn provider(&self) -> &Arc<dyn DeviceDiscoveryProvider> {
+        &self.provider
+    }
+}
+
+impl DeviceDiscoveryProvider for DeviceManagerService {
+    fn discover_devices(&self) -> Result<Vec<PhysicalDevice>, LocardError> {
+        self.provider.discover_devices()
+    }
 }

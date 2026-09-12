@@ -25,6 +25,7 @@ export const UserManagementPage: React.FC = () => {
   // New User Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('Investigator');
   const [modalError, setModalError] = useState<string | null>(null);
@@ -88,6 +89,39 @@ export const UserManagementPage: React.FC = () => {
     }
   };
 
+  const handleRoleChange = async (user: PublicUser, role: UserRole) => {
+    if (!sessionToken) return;
+    try {
+      setError(null);
+      setActionSuccess(null);
+      await authService.changeUserRole(sessionToken, {
+        user_id: user.user_id,
+        new_role: role,
+      });
+      setActionSuccess(`Role for '${user.username}' successfully changed to ${role}.`);
+      await loadUsers();
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to change user role.');
+      setError(msg);
+    }
+  };
+
+  const handleUnlockUser = async (user: PublicUser) => {
+    if (!sessionToken) return;
+    try {
+      setError(null);
+      setActionSuccess(null);
+      await authService.unlockUser(sessionToken, {
+        user_id: user.user_id,
+      });
+      setActionSuccess(`User '${user.username}' has been successfully unlocked.`);
+      await loadUsers();
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to unlock user.');
+      setError(msg);
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sessionToken) return;
@@ -108,11 +142,13 @@ export const UserManagementPage: React.FC = () => {
         username: newUsername.trim(),
         password: newPassword,
         role: newRole,
+        display_name: newDisplayName.trim() || undefined,
       });
       setIsModalOpen(false);
       const createdUser = newUsername.trim();
       const createdRole = newRole;
       setNewUsername('');
+      setNewDisplayName('');
       setNewPassword('');
       setNewRole('Investigator');
       setActionSuccess(`Account '${createdUser}' (${createdRole}) created successfully.`);
@@ -252,28 +288,34 @@ export const UserManagementPage: React.FC = () => {
                       key={u.user_id}
                       className="hover:bg-slate-50/60 transition-colors"
                     >
-                      <td className="px-4 py-3 font-medium text-slate-900 flex items-center gap-2">
-                        <span>{u.username}</span>
-                        {isCurrent && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono font-semibold">
-                            ACTIVE
-                          </span>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <span>{u.username}</span>
+                          {isCurrent && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono font-semibold">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
+                        {u.display_name && (
+                          <div className="text-[11px] font-normal text-slate-500">
+                            {u.display_name}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-mono border ${
-                            u.role === 'Administrator'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200'
-                              : u.role === 'Investigator'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : u.role === 'Operator'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : 'bg-slate-100 text-slate-700 border-slate-200'
-                          }`}
+                        <select
+                          value={u.role}
+                          onChange={(e) => handleRoleChange(u, e.target.value as UserRole)}
+                          disabled={isCurrent && u.role === 'Administrator'}
+                          title={isCurrent && u.role === 'Administrator' ? 'Administrator cannot demote self' : 'Change user role'}
+                          className="px-2 py-0.5 rounded text-[11px] font-mono border bg-white border-slate-300 text-slate-800 cursor-pointer focus:outline-none focus:border-slate-500 disabled:opacity-75 disabled:cursor-not-allowed"
                         >
-                          {u.role}
-                        </span>
+                          <option value="Administrator">Administrator</option>
+                          <option value="Investigator">Investigator</option>
+                          <option value="Operator">Operator</option>
+                          <option value="Viewer">Viewer</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -295,17 +337,25 @@ export const UserManagementPage: React.FC = () => {
                         {new Date(u.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">
-                        {u.last_login ? (
-                          new Date(u.last_login).toLocaleString()
+                        {u.last_login || u.last_login_at ? (
+                          new Date(u.last_login || u.last_login_at!).toLocaleString()
                         ) : (
                           <span className="text-slate-400">Never</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right space-x-1.5">
+                        <button
+                          onClick={() => handleUnlockUser(u)}
+                          title="Clear lockout status and reset failed attempt counters"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors text-slate-700 hover:bg-slate-100 border border-slate-200"
+                        >
+                          <span>Unlock</span>
+                        </button>
                         <button
                           onClick={() => handleToggleEnabled(u)}
+                          disabled={isCurrent && u.role === 'Administrator'}
                           title={u.enabled ? 'Disable Account' : 'Enable Account'}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors ${
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                             u.enabled
                               ? 'text-rose-600 hover:bg-rose-50 border border-rose-200'
                               : 'text-emerald-600 hover:bg-emerald-50 border border-emerald-200'
@@ -358,6 +408,19 @@ export const UserManagementPage: React.FC = () => {
             )}
 
             <form onSubmit={handleCreateUser} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Full Name / Display Name <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={newDisplayName}
+                  onChange={(e) => setNewDisplayName(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:border-slate-500 focus:bg-white"
+                  placeholder="e.g. John Doe"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Username

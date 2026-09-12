@@ -156,6 +156,7 @@ fn create_test_user(auth: &AuthService, username: &str, role: UserRole) -> Strin
             username: "root_admin".to_string(),
             password: "AdminPassword123!".to_string(),
             confirm_password: "AdminPassword123!".to_string(),
+            display_name: None,
         })
         .expect("Admin init failed");
     }
@@ -177,6 +178,8 @@ fn create_test_user(auth: &AuthService, username: &str, role: UserRole) -> Strin
             username: username.to_string(),
             password: "UserPassword123!".to_string(),
             role,
+            display_name: None,
+            metadata_json: None,
         },
     )
     .expect("Create user failed");

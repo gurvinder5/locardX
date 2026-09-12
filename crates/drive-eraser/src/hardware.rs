@@ -142,6 +142,18 @@ impl RealHardwareExecutionGate {
             ));
         }
 
+        let norm_id = plan.physical_device_id.to_uppercase();
+        if (norm_id == r"\\.\PHYSICALDRIVE0" || norm_id == "PHYSICALDRIVE0")
+            && (!plan.device_snapshot.is_removable || plan.device_snapshot.is_system)
+        {
+            return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(
+                format!(
+                    "Device '{}' is the primary system drive (PhysicalDrive0); sanitization is permanently blocked.",
+                    plan.physical_device_id
+                ),
+            ));
+        }
+
         // 4. Two-stage confirmation check
         if !warning_acknowledged {
             return Err(DriveEraseFailureReason::SecurityViolation(
@@ -180,19 +192,28 @@ impl RealHardwareExecutionGate {
             ))
         })?;
 
-        plan.device_snapshot
-            .detect_mutation(&live_snapshot)
-            .map_err(DriveEraseFailureReason::DeviceMutated)?;
+        let reval = plan.device_snapshot.revalidate_identity(&live_snapshot);
+        let discrepancies = match reval {
+            crate::models::IdentityRevalidationOutcome::Verified => Vec::new(),
+            crate::models::IdentityRevalidationOutcome::VerifiedWithDiscrepancy(disc) => disc,
+            crate::models::IdentityRevalidationOutcome::Failed(err) => {
+                return Err(DriveEraseFailureReason::DeviceMutated(err));
+            }
+        };
 
         // 7. Issue single-use permit bound to operation, plan, device, snapshot, method, and mode
-        Ok(HardwareExecutionPermit::issue(
+        let mut permit = HardwareExecutionPermit::issue(
             operation_id.to_string(),
             plan.plan_id.clone(),
             plan.physical_device_id.clone(),
             plan.device_snapshot.clone(),
             plan.method,
             plan.execution_mode,
-        ))
+        );
+        if !discrepancies.is_empty() {
+            permit = permit.with_identity_discrepancies(discrepancies);
+        }
+        Ok(permit)
     }
 }
 
@@ -416,10 +437,14 @@ impl RealHardwareSanitizer {
                 ))
             })?;
 
-            permit
-                .device_snapshot()
-                .detect_mutation(&live_snapshot)
-                .map_err(DriveEraseFailureReason::DeviceMutated)?;
+            let reval = permit.device_snapshot().revalidate_identity(&live_snapshot);
+            match reval {
+                crate::models::IdentityRevalidationOutcome::Verified
+                | crate::models::IdentityRevalidationOutcome::VerifiedWithDiscrepancy(_) => {}
+                crate::models::IdentityRevalidationOutcome::Failed(err) => {
+                    return Err(DriveEraseFailureReason::DeviceMutated(err));
+                }
+            }
 
             if live_snapshot.is_system || live_snapshot.is_boot {
                 return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(

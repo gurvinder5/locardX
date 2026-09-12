@@ -17,11 +17,17 @@ locardx-security = { workspace = true }
 locardx-file-eraser = { workspace = true }
 locardx-drive-eraser = { workspace = true }
 locardx-reporting = { workspace = true }
+locardx-acquisition = { workspace = true }
+locardx-recovery-engine = { workspace = true }
+locardx-case-management = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [build-dependencies]
 tauri-build = { workspace = true }

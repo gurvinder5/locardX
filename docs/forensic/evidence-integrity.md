@@ -1,65 +1,52 @@
-# Forensic Evidence Integrity & Cryptographic Hashing
-
-## 1. Overview & Forensic Principles
-
-In forensic analysis and data sanitization verification, the fundamental principle is that **evidence must never be altered during inspection** (Locard's Exchange Principle inverted: the investigator's tools must leave no contact trace on source evidence).
-
-LocardX provides cryptographic hash calculation and integrity verification designed to meet digital forensics standards:
-- **Strict Read-Only Access**: Hashing and verification open files strictly with read-only flags (`std::fs::File::open`), never issuing write, append, or truncate operations.
-- **Bounded Memory Consumption**: Computations stream through a bounded 64 KiB buffer (`STREAM_CHUNK_SIZE`), ensuring constant \(O(1)\) memory usage regardless of whether the file is 10 KB or 100 GB.
-- **Side-Channel Mitigation**: Hash comparison utilizes constant-time byte comparisons to prevent timing side channels.
-- **Chain of Custody Anchoring**: Every calculation and verification operation is registered as an immutable event in the tamper-evident SHA-256 audit hash-chain.
+# Forensic Evidence Preservation & Integrity Controls
+**LocardX Module Specification -- Step 12 Evidential Standards**
 
 ---
 
-## 2. Cryptographic Specification
+## 1. Principles of Evidential Preservation
 
-### Algorithm
-- **Algorithm**: SHA-256 (Secure Hash Algorithm 256-bit, FIPS 180-4).
-- **Implementation**: RustCrypto `sha2` crate (pure Rust, audited, constant memory).
-- **Digest Output**: 64 lowercase hexadecimal characters.
+The core doctrine of LocardX is that forensic analysis must never alter the original physical evidence or evidential disk images. The Recovery Module adheres strictly to ISO/IEC 27037 and NIST SP 800-86 standards:
 
-### Test Vectors
-LocardX validates hash correctness against standard NIST test vectors:
-- **Empty String**:
-  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
-- **"abc"**:
-  `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`
-- **Standard 56-byte sequence ("abcdbcdecdef...nopq")**:
-  `248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1`
+1. **Non-Destructive Read-Only Access**: All physical disk access is read-only. Forensic raw DD images are opened with read-only file descriptors.
+2. **Fail-Closed Tamper Detection**: Before analysis begins, streaming SHA-256 over the entire image must match the acquisition digest recorded in `AcquisitionArtifact`. Any difference halts the workflow immediately.
+3. **No In-Place Modifications**: Recovered files and reports are written to an isolated external export directory.
+4. **No Synthetic Data Fabrication**: Gaps or missing sectors in fragmented files are flagged as incomplete or partially valid; the engine never fabricates or hallucinates content.
 
 ---
 
-## 3. Architecture & Data Structures
+## 2. Database Schema (Migration 011)
 
-### Target Identity vs. Cryptographic Digest
-LocardX explicitly separates *what* is being hashed (`TargetIdentity`) from the *digest* produced:
+The recovery workflow state, validated evidence sources, recovered files, and forensic reports are persisted across five relational tables in SQLite:
 
-```rust
-pub struct TargetIdentity {
-    pub target_type: TargetType,
-    pub identifier: String,    // Normalized canonical path
-    pub display_name: String,  // Filename for user presentation
-    pub size_bytes: Option<u64>,
-}
-```
-
-This prevents ambiguous provenance records where a digest exists without clear metadata regarding the exact evidence file, size, and source path.
-
-### Verification States
-Verification results distinguish three explicit outcomes:
-1. **`Verified`**: The calculated digest exactly matches the reference digest.
-2. **`Mismatch`**: Both expected and calculated digests are syntactically valid, but their cryptographic contents differ. Both values are retained in the result and audit log.
-3. **`UnableToVerify`**: The verification could not complete (e.g., target file does not exist, permission denied, or reference hash is syntactically invalid).
+- `recovery_sources`: Stores verified acquisition sources, image paths, capacities, SHA-256 hashes, and hardware identities.
+- `recovery_jobs`: Tracks every recovery operation lifecycle (`Pending` -> `Scanning` -> `Completed` / `Cancelled` / `Failed`), bytes scanned, candidates evaluated, and failure reasons.
+- `recovered_files`: Stores all extracted files, source byte offsets, sizes, MIME types, validation statuses, confidence scores, and individual evidence factors.
+- `recovery_fragments`: Tracks discrete cluster segments for fragmented file reconstructions.
+- `recovery_reports`: Stores immutable summary reports and cryptographic report digests.
 
 ---
 
-## 4. Tamper-Evident Audit Integration
+## 3. Tamper-Evident Audit Logging
 
-Every calculation and verification is committed to SQLite `audit_events` and `integrity_records` tables:
-- **Hash calculation event**: `EVIDENCE_HASH_CALCULATED`
-- **Successful verification event**: `INTEGRITY_VERIFICATION_PASS`
-- **Failed verification event**: `INTEGRITY_VERIFICATION_FAIL`
-- **Verification error event**: `INTEGRITY_VERIFICATION_ERROR`
+All recovery operations append structured, cryptographically linked events to the SHA-256 audit chain:
 
-Each event incorporates the previous event's SHA-256 digest, creating an unbroken cryptographic hash-chain that detects any retroactive tampering or record deletion.
+| Audit Event Type | Trigger | Logged Details |
+| :--- | :--- | :--- |
+| `RECOVERY_SOURCE_VALIDATED` | Source validation completes | Acquisition ID, image path, size, SHA-256 hash |
+| `RECOVERY_PLANNED` | Pre-flight plan created | Mode, target types, minimum confidence threshold |
+| `RECOVERY_STARTED` | Engine begins scanning | Job ID, operation ID, source path |
+| `RECOVERY_CANCEL_REQUESTED` | Operator triggers cancel | Operation ID, requesting operator |
+| `RECOVERY_COMPLETED` | Execution finishes | Files recovered, bytes scanned, elapsed duration |
+| `RECOVERY_CANCELLED` | Execution aborted | Partial bytes scanned, elapsed duration |
+| `RECOVERY_FAILED` | Fail-closed error encountered| Structured failure reason code |
+| `RECOVERY_REPORT_GENERATED`| Final report persisted | Report ID, job ID, cryptographic report digest |
+
+---
+
+## 4. Cryptographic Report Digest
+
+Upon recovery completion, the engine generates an immutable forensic summary report. The report calculates a SHA-256 report digest over the canonical string:
+
+$$\text{ReportDigest} = \text{SHA256}\left(\text{report\_id} \mathbin{\Vert} \text{job\_id} \mathbin{\Vert} \text{acquisition\_id} \mathbin{\Vert} \text{files\_recovered} \mathbin{\Vert} \text{average\_confidence}\right)$$
+
+This digest is committed to the database and recorded in the hash-chained audit log, providing undeniable cryptographic proof of investigation findings.

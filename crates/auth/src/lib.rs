@@ -6,8 +6,9 @@ pub mod session;
 
 pub use authorization::AuthorizationEngine;
 pub use models::{
-    AuthSessionResponse, ChangePasswordRequest, CreateUserRequest, InitAdminRequest, LoginRequest,
-    PublicUser, Session, User, UserRole,
+    AuthSessionResponse, ChangePasswordRequest, ChangeUserRoleRequest, CreateUserRequest,
+    InitAdminRequest, LoginRequest, Permission, PublicUser, Session, SessionValidationResponse,
+    SetUserEnabledRequest, UnlockUserRequest, UpdateUserRequest, User, UserRole,
 };
 pub use password::{hash_password, validate_password_strength, verify_password};
 pub use service::AuthService;

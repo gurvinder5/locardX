@@ -64,13 +64,14 @@ pub enum OperationType {
     FileErasure,
     FolderErasure,
     DriveErasure,
+    ForensicAcquisition,
     Recovery,
     Unknown,
 }
 
 impl OperationType {
-    /// Invariant: Only read-only operations, sanitization planning, and logical file/folder erasure
-    /// are executable in the base system. Real physical drive erasure and carving remain disabled.
+    /// Invariant: Only read-only operations, sanitization planning, forensic acquisition,
+    /// and logical file/folder erasure are executable in the base system.
     pub fn is_executable(&self) -> bool {
         matches!(
             self,
@@ -79,6 +80,7 @@ impl OperationType {
                 | Self::SanitizationPlanEvaluation
                 | Self::FileErasure
                 | Self::FolderErasure
+                | Self::ForensicAcquisition
         )
     }
 
@@ -97,6 +99,7 @@ impl OperationType {
             Self::IntegrityHash
                 | Self::IntegrityVerify
                 | Self::SanitizationPlanEvaluation
+                | Self::ForensicAcquisition
                 | Self::Recovery
         )
     }
@@ -111,6 +114,7 @@ impl std::fmt::Display for OperationType {
             Self::FileErasure => write!(f, "FileErasure"),
             Self::FolderErasure => write!(f, "FolderErasure"),
             Self::DriveErasure => write!(f, "DriveErasure"),
+            Self::ForensicAcquisition => write!(f, "ForensicAcquisition"),
             Self::Recovery => write!(f, "Recovery"),
             Self::Unknown => write!(f, "Unknown"),
         }
@@ -128,6 +132,7 @@ impl std::str::FromStr for OperationType {
             "FileErasure" => Ok(Self::FileErasure),
             "FolderErasure" => Ok(Self::FolderErasure),
             "DriveErasure" => Ok(Self::DriveErasure),
+            "ForensicAcquisition" => Ok(Self::ForensicAcquisition),
             "Recovery" => Ok(Self::Recovery),
             "Unknown" => Ok(Self::Unknown),
             other => Err(crate::error::LocardError::Operation(format!(

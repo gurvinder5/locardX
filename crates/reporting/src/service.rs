@@ -1,3 +1,6 @@
+use crate::forensic_report::{
+    CaseForensicReport, CaseReportData, CaseReportSummary, ForensicReportGenerator,
+};
 use crate::models::DriveSanitizationReport;
 use crate::sanitization_report::SanitizationReportGenerator;
 use locardx_audit::AuditService;
@@ -173,5 +176,149 @@ impl ReportingService {
     /// Verifies the cryptographic integrity of a given report.
     pub fn verify_report(&self, report: &DriveSanitizationReport) -> bool {
         SanitizationReportGenerator::verify_report_integrity(report)
+    }
+
+    /// Generates, signs, and persists a comprehensive `CaseForensicReport`.
+    pub fn generate_case_report(
+        &self,
+        data: &CaseReportData,
+        actor_id: Option<&str>,
+    ) -> Result<CaseForensicReport, LocardError> {
+        let audit_ref = match self.audit.verify_chain() {
+            Ok(_) => self
+                .db
+                .with_conn(|conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT current_hash FROM audit_events ORDER BY sequence_number DESC LIMIT 1",
+                    )?;
+                    let mut rows = stmt.query([])?;
+                    if let Some(row) = rows.next()? {
+                        let h: String = row.get(0)?;
+                        Ok(Some(h))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .unwrap_or(None),
+            Err(_) => None,
+        };
+
+        let report = ForensicReportGenerator::generate_case_report(
+            data,
+            audit_ref,
+            actor_id.map(|s| s.to_string()),
+        );
+
+        let actor = actor_id.unwrap_or(&data.case_info.lead_investigator);
+        self.persist_case_report(&report, actor)?;
+
+        let _ = self.audit.log_structured_event(
+            "CASE_REPORT_GENERATED",
+            Some(actor),
+            Some(&report.case_id),
+            &format!(
+                "Generated case forensic report '{}' for case '{}' (Digest: {})",
+                report.report_id, report.case_id, report.integrity.report_digest
+            ),
+        );
+
+        info!(
+            report_id = %report.report_id,
+            case_id = %report.case_id,
+            digest = %report.integrity.report_digest,
+            "Case forensic report generated and persisted"
+        );
+
+        Ok(report)
+    }
+
+    /// Persists a `CaseForensicReport` into the `case_reports` table.
+    pub fn persist_case_report(
+        &self,
+        report: &CaseForensicReport,
+        generated_by: &str,
+    ) -> Result<(), LocardError> {
+        let report_json = serde_json::to_string(report).map_err(|e| {
+            LocardError::Database(format!("Failed to serialize case report to JSON: {}", e))
+        })?;
+
+        let report_md = ForensicReportGenerator::format_markdown_report(report);
+
+        self.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO case_reports (
+                    report_id, case_id, report_type, title, report_digest,
+                    audit_chain_reference, generated_by, generated_at,
+                    report_json, report_markdown
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    report.report_id,
+                    report.case_id,
+                    "CaseForensicReport",
+                    report.title,
+                    report.integrity.report_digest,
+                    report.integrity.audit_chain_reference,
+                    generated_by,
+                    report.integrity.generated_at,
+                    report_json,
+                    report_md,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Retrieves a persisted `CaseForensicReport` by report ID.
+    pub fn get_case_report(
+        &self,
+        report_id: &str,
+    ) -> Result<Option<CaseForensicReport>, LocardError> {
+        self.db.with_conn(|conn| {
+            let mut stmt =
+                conn.prepare("SELECT report_json FROM case_reports WHERE report_id = ?1 LIMIT 1")?;
+            let mut rows = stmt.query(params![report_id])?;
+            if let Some(row) = rows.next()? {
+                let json_str: String = row.get(0)?;
+                let report: CaseForensicReport = serde_json::from_str(&json_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                Ok(Some(report))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
+    /// Lists all reports generated for a given case.
+    pub fn list_case_reports(&self, case_id: &str) -> Result<Vec<CaseReportSummary>, LocardError> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT report_id, case_id, report_type, title, report_digest, generated_by, generated_at
+                 FROM case_reports WHERE case_id = ?1 ORDER BY generated_at DESC",
+            )?;
+            let mut rows = stmt.query(params![case_id])?;
+            let mut reports = Vec::new();
+            while let Some(row) = rows.next()? {
+                reports.push(CaseReportSummary {
+                    report_id: row.get(0)?,
+                    case_id: row.get(1)?,
+                    report_type: row.get(2)?,
+                    title: row.get(3)?,
+                    report_digest: row.get(4)?,
+                    generated_by: row.get(5)?,
+                    generated_at: row.get(6)?,
+                });
+            }
+            Ok(reports)
+        })
+    }
+
+    /// Verifies the cryptographic integrity of a `CaseForensicReport`.
+    pub fn verify_case_report(&self, report: &CaseForensicReport) -> bool {
+        ForensicReportGenerator::verify_report_integrity(report)
     }
 }

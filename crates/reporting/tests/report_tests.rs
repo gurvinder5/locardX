@@ -180,3 +180,198 @@ fn test_reporting_service_persistence_and_retrieval() {
     );
     assert!(reporting.verify_report(&retrieved));
 }
+
+#[test]
+fn test_case_forensic_report_generation_and_integrity() {
+    use locardx_reporting::forensic_report::*;
+    use std::collections::HashMap;
+
+    let db = Arc::new(Database::open(":memory:").unwrap());
+    let audit = Arc::new(AuditService::new(Arc::clone(&db)));
+    let reporting = ReportingService::new(Arc::clone(&db), Arc::clone(&audit));
+
+    let case_info = CaseReportInfo {
+        case_id: "case-e2e-001".to_string(),
+        case_reference: "INV-2026-X".to_string(),
+        title: "Intrusion Analysis Target Alpha".to_string(),
+        description: "Comprehensive forensic examination of suspect machine".to_string(),
+        status: "Completed".to_string(),
+        lead_investigator: "lead_examiner".to_string(),
+        created_at: "2026-09-12T01:00:00Z".to_string(),
+        closed_at: Some("2026-09-12T05:00:00Z".to_string()),
+    };
+
+    // Insert case record into DB to satisfy foreign key constraint
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO cases (case_id, case_reference, title, description, status, lead_investigator, created_at, updated_at, closed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                case_info.case_id,
+                case_info.case_reference,
+                case_info.title,
+                case_info.description,
+                case_info.status,
+                case_info.lead_investigator,
+                case_info.created_at,
+                case_info.created_at,
+                case_info.closed_at,
+            ],
+        )?;
+        Ok(())
+    }).unwrap();
+
+    let acquisitions = vec![CaseAcquisitionReportInfo {
+        acquisition_id: "acq-1".to_string(),
+        operation_id: "op-acq-1".to_string(),
+        source_device_id: r"\\.\PhysicalDrive1".to_string(),
+        source_display_name: "WD Black 2TB".to_string(),
+        source_serial: Some("WD-1234".to_string()),
+        source_capacity_bytes: 2_000_398_934_016,
+        destination_path: "/evidence/disk1.raw".to_string(),
+        image_format: "Raw/DD".to_string(),
+        image_size_bytes: 2_000_398_934_016,
+        image_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_string(),
+        status: "Completed".to_string(),
+        started_at: "2026-09-12T01:10:00Z".to_string(),
+        completed_at: "2026-09-12T02:00:00Z".to_string(),
+        audit_reference: "HASH_CHAIN_ACQ_1".to_string(),
+    }];
+
+    let mut category_counts = HashMap::new();
+    category_counts.insert("Documents".to_string(), 42);
+    category_counts.insert("Images".to_string(), 128);
+
+    let mut confidence_distribution = HashMap::new();
+    confidence_distribution.insert("High".to_string(), 150);
+    confidence_distribution.insert("Medium".to_string(), 20);
+
+    let recoveries = vec![CaseRecoveryReportInfo {
+        job_id: "rec-job-1".to_string(),
+        operation_id: "op-rec-1".to_string(),
+        acquisition_id: "acq-1".to_string(),
+        source_image_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            .to_string(),
+        recovery_mode: "All".to_string(),
+        status: "Completed".to_string(),
+        files_recovered: 170,
+        candidates_evaluated: 210,
+        elapsed_seconds: 45.3,
+        category_counts,
+        confidence_distribution,
+        sample_files: vec![RecoveredFileSnippet {
+            file_id: "f-1".to_string(),
+            filename: "carved_doc_001.pdf".to_string(),
+            file_type: "PDF".to_string(),
+            size_bytes: 1048576,
+            confidence_score: 95,
+            confidence_grade: "High".to_string(),
+            sha256_hash: "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"
+                .to_string(),
+            recovery_method: "DeepCarving".to_string(),
+        }],
+        audit_reference: "HASH_CHAIN_REC_1".to_string(),
+    }];
+
+    let erasures = vec![CaseErasureReportInfo {
+        operation_id: "op-era-1".to_string(),
+        plan_id: "plan-era-1".to_string(),
+        physical_device_id: r"\\.\PhysicalDrive3".to_string(),
+        display_name: "SanDisk Cruzer 32GB".to_string(),
+        serial_number: Some("SD-9988".to_string()),
+        method: "NistClearSinglePassZeros".to_string(),
+        execution_mode: "RealHardware".to_string(),
+        status: "Completed".to_string(),
+        verification_outcome: "Verified".to_string(),
+        verification_strategy: "FullDeviceReadVerification".to_string(),
+        evidence_digest: Some("DIGEST_ERA_1".to_string()),
+        limitations: vec![],
+        audit_reference: "HASH_CHAIN_ERA_1".to_string(),
+        completed_at: "2026-09-12T04:30:00Z".to_string(),
+    }];
+
+    let custody_timeline = vec![CustodyTimelineEntry {
+        custody_id: "cust-1".to_string(),
+        evidence_id: Some("ev-1".to_string()),
+        timestamp: "2026-09-12T01:05:00Z".to_string(),
+        event_type: "EvidenceIntroduced".to_string(),
+        actor_id: "lead_examiner".to_string(),
+        action: "Introduced physical drive WD Black 2TB".to_string(),
+        details: "Bagged and tagged evidence item 001".to_string(),
+        audit_hash: Some("AUDIT_HASH_CUST_1".to_string()),
+    }];
+
+    let audit_integrity = ReportAuditIntegrity {
+        is_valid: true,
+        total_events: 24,
+        last_verified_sequence: 24,
+        audit_root_hash: "ROOT_AUDIT_HASH_99".to_string(),
+    };
+
+    let report_data = CaseReportData {
+        case_info,
+        acquisitions,
+        recoveries,
+        erasures,
+        custody_timeline,
+        audit_integrity,
+    };
+
+    // 1. Generate report
+    let report = reporting
+        .generate_case_report(&report_data, Some("lead_examiner"))
+        .expect("Case report generation must succeed");
+
+    // 2. Verify all sections populated
+    assert_eq!(report.acquisitions.len(), 1);
+    assert_eq!(report.acquisitions[0].source_display_name, "WD Black 2TB");
+    assert_eq!(report.recoveries.len(), 1);
+    assert_eq!(report.recoveries[0].files_recovered, 170);
+    assert_eq!(report.erasures.len(), 1);
+    assert_eq!(report.erasures[0].verification_outcome, "Verified");
+    assert_eq!(report.custody_timeline.len(), 1);
+    assert!(report.audit_integrity.is_valid);
+
+    // 3. Digest and integrity verification
+    assert!(!report.integrity.report_digest.is_empty());
+    assert!(reporting.verify_case_report(&report));
+
+    // 4. Tamper detection
+    let mut tampered_report = report.clone();
+    tampered_report.case_info.title = "Altered Title for Tamper Test".to_string();
+    assert!(
+        !reporting.verify_case_report(&tampered_report),
+        "Tampered report must fail cryptographic integrity check"
+    );
+
+    // 5. Formats
+    let md = ForensicReportGenerator::format_markdown_report(&report);
+    assert!(md.contains("LocardX Unified Forensic Investigation Report"));
+    assert!(md.contains("WD Black 2TB"));
+    assert!(md.contains("carved_doc_001.pdf"));
+    assert!(md.contains("SanDisk Cruzer 32GB"));
+    assert!(md.contains("VERIFIED (Zero tampering detected)"));
+
+    let cert = ForensicReportGenerator::format_text_certificate(&report);
+    assert!(cert.contains("LOCARDX FORENSIC INVESTIGATION CERTIFICATE"));
+    assert!(cert.contains("CRYPTOGRAPHICALLY VERIFIED"));
+
+    // 6. Retrieval and listing
+    let retrieved = reporting
+        .get_case_report(&report.report_id)
+        .expect("Query must succeed")
+        .expect("Report must exist");
+    assert_eq!(retrieved.report_id, report.report_id);
+    assert_eq!(
+        retrieved.integrity.report_digest,
+        report.integrity.report_digest
+    );
+    assert!(reporting.verify_case_report(&retrieved));
+
+    let list = reporting
+        .list_case_reports(&report.case_id)
+        .expect("List query must succeed");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].report_id, report.report_id);
+}
