@@ -1,14 +1,22 @@
 use crate::state::AppState;
 use locardx_acquisition::{
     validate_destination, validate_source_device_id, AcquisitionArtifact,
-    AcquisitionDeviceSnapshot, AcquisitionPlan, AcquisitionProgress, AcquisitionResult,
-    AcquisitionStatus,
+    AcquisitionDeviceSnapshot, AcquisitionPlan, AcquisitionProgress, AcquisitionRecordDto,
+    AcquisitionResult, AcquisitionStatus,
 };
 use locardx_common::SafeErrorResponse;
 use locardx_device_manager::DeviceDiscoveryProvider;
+use locardx_drive_eraser::is_elevated_admin;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcquisitionPrivilegeStatus {
+    pub is_elevated: bool,
+    pub platform: String,
+    pub message: String,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateAcquisitionPlanRequest {
@@ -23,6 +31,7 @@ pub struct CreateAcquisitionPlanRequest {
 pub struct StartAcquisitionRequest {
     pub plan: AcquisitionPlan,
     pub session_token: Option<String>,
+    pub operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,6 +176,12 @@ pub fn create_acquisition_plan_handler(
     state: &AppState,
     request: CreateAcquisitionPlanRequest,
 ) -> Result<AcquisitionPlan, SafeErrorResponse> {
+    // Active Case Policy: Fail-closed if no active case or if case is closed
+    state
+        .case_service
+        .require_active_case()
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let actor_id = request
         .session_token
         .as_deref()
@@ -187,6 +202,13 @@ pub async fn start_acquisition_handler(
     state: &AppState,
     request: StartAcquisitionRequest,
 ) -> Result<AcquisitionResult, SafeErrorResponse> {
+    // Active Case Policy: Fail-closed if no active case or if case is closed
+    let active_case = state
+        .case_service
+        .require_active_case()
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+    let case_id = active_case.case_id.clone();
+
     let actor_id = request
         .session_token
         .as_deref()
@@ -194,11 +216,23 @@ pub async fn start_acquisition_handler(
 
     let acquisition_service = Arc::clone(&state.acquisition);
     let plan = request.plan;
-    let operation_id = format!("op-acq-{}", uuid::Uuid::new_v4());
+    let operation_id = request
+        .operation_id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("op-acq-{}", uuid::Uuid::new_v4()));
+
+    let op_id_cloned = operation_id.clone();
+    let case_id_cloned = case_id.clone();
+    let actor_id_cloned = actor_id.clone();
 
     // Run blocking acquisition stream in worker thread
     let result = tokio::task::spawn_blocking(move || {
-        acquisition_service.execute_acquisition(&operation_id, &plan, actor_id.as_deref())
+        acquisition_service.execute_acquisition_with_case(
+            &op_id_cloned,
+            &plan,
+            actor_id_cloned.as_deref(),
+            Some(&case_id_cloned),
+        )
     })
     .await
     .map_err(|e| {
@@ -208,6 +242,34 @@ pub async fn start_acquisition_handler(
         )))
     })?
     .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    // Associate operation with the active case in CaseService (auto-links evidence)
+    let user = request
+        .session_token
+        .as_deref()
+        .and_then(|tok| state.auth.get_current_user(tok).ok())
+        .unwrap_or_else(|| locardx_auth::PublicUser {
+            user_id: "sys-operator".to_string(),
+            username: actor_id.clone().unwrap_or_else(|| "operator".to_string()),
+            role: locardx_auth::UserRole::Operator,
+            display_name: Some("Forensic Operator".to_string()),
+            enabled: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            last_login_at: None,
+            metadata_json: "{}".to_string(),
+        });
+
+    let _ = state.case_service.associate_operation(
+        &case_id,
+        &operation_id,
+        "ForensicAcquisition",
+        &user,
+        Some(&format!(
+            "Forensic bitstream acquisition of {} -> {}",
+            result.source.display_name, result.destination_path
+        )),
+    );
 
     Ok(result)
 }
@@ -372,4 +434,50 @@ pub fn verify_acquisition_artifact(
     artifact: AcquisitionArtifact,
 ) -> Result<ArtifactVerificationResponse, SafeErrorResponse> {
     verify_acquisition_artifact_handler(artifact)
+}
+
+pub fn check_acquisition_privileges_handler() -> Result<AcquisitionPrivilegeStatus, SafeErrorResponse> {
+    let is_elevated = is_elevated_admin();
+    let platform = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "unsupported"
+    };
+
+    let message = if is_elevated {
+        "Administrative privileges verified: Process has elevated privileges required for raw physical bitstream acquisition."
+            .to_string()
+    } else {
+        "Administrative elevation required: Bitstream acquisition from physical storage devices requires running LocardX as Administrator."
+            .to_string()
+    };
+
+    Ok(AcquisitionPrivilegeStatus {
+        is_elevated,
+        platform: platform.to_string(),
+        message,
+    })
+}
+
+#[tauri::command]
+pub fn check_acquisition_privileges() -> Result<AcquisitionPrivilegeStatus, SafeErrorResponse> {
+    check_acquisition_privileges_handler()
+}
+
+pub fn list_acquisition_records_handler(
+    state: &AppState,
+) -> Result<Vec<AcquisitionRecordDto>, SafeErrorResponse> {
+    state
+        .acquisition
+        .list_acquisition_records()
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub fn list_acquisition_records(
+    state: State<'_, AppState>,
+) -> Result<Vec<AcquisitionRecordDto>, SafeErrorResponse> {
+    list_acquisition_records_handler(&state)
 }

@@ -17,7 +17,7 @@ use locardx_reporting::ReportingService;
 use rusqlite::params;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tracing::info;
 use uuid::Uuid;
 
@@ -26,6 +26,7 @@ pub struct CaseService {
     db: Arc<Database>,
     audit: Arc<AuditService>,
     reporting: Arc<ReportingService>,
+    active_case_id: Arc<RwLock<Option<String>>>,
 }
 
 impl CaseService {
@@ -38,6 +39,7 @@ impl CaseService {
             db,
             audit,
             reporting,
+            active_case_id: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -51,6 +53,77 @@ impl CaseService {
 
     pub fn reporting(&self) -> &Arc<ReportingService> {
         &self.reporting
+    }
+
+    /// Sets the active investigation case in application/backend state.
+    pub fn set_active_case(&self, case_id: &str) -> Result<Case, LocardError> {
+        let case = self
+            .get_case(case_id)?
+            .ok_or_else(|| LocardError::Operation(format!("Case '{}' not found", case_id)))?;
+
+        let mut lock = self.active_case_id.write().map_err(|e| {
+            LocardError::Operation(format!("Failed to acquire active case lock: {}", e))
+        })?;
+        *lock = Some(case_id.to_string());
+
+        let _ = self.audit.log_structured_event(
+            "ACTIVE_CASE_SET",
+            None,
+            Some(case_id),
+            &format!(
+                "Active investigation case set to '{}' ({})",
+                case.title, case.case_reference
+            ),
+        );
+
+        Ok(case)
+    }
+
+    /// Retrieves the active investigation case, if one is currently selected.
+    pub fn get_active_case(&self) -> Result<Option<Case>, LocardError> {
+        let id_opt = {
+            let lock = self.active_case_id.read().map_err(|e| {
+                LocardError::Operation(format!("Failed to acquire active case lock: {}", e))
+            })?;
+            lock.clone()
+        };
+        if let Some(id) = id_opt {
+            self.get_case(&id)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Clears the active investigation case in application/backend state.
+    pub fn clear_active_case(&self) {
+        if let Ok(mut lock) = self.active_case_id.write() {
+            *lock = None;
+        }
+        let _ = self.audit.log_structured_event(
+            "ACTIVE_CASE_CLEARED",
+            None,
+            None,
+            "Active investigation case cleared",
+        );
+    }
+
+    /// Requires an active case that is currently Open or InProgress.
+    /// Fails closed with `ACTIVE_CASE_REQUIRED` if no active case is set,
+    /// or `CASE_CLOSED` if the active case is Completed or Archived.
+    pub fn require_active_case(&self) -> Result<Case, LocardError> {
+        let active = self.get_active_case()?.ok_or_else(|| {
+            LocardError::SecurityViolation(
+                "ACTIVE_CASE_REQUIRED: An active investigation case is required for this forensic operation. Create or select a case before proceeding.".to_string(),
+            )
+        })?;
+
+        if active.status == CaseStatus::Completed || active.status == CaseStatus::Archived {
+            return Err(LocardError::SecurityViolation(format!(
+                "CASE_CLOSED: Case '{}' ({}) is {}. Select an active (Open or InProgress) case to start a new operation.",
+                active.title, active.case_reference, active.status
+            )));
+        }
+        Ok(active)
     }
 
     /// Creates a new investigation case, recording an audit event and initial custody record.

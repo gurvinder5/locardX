@@ -57,7 +57,22 @@ pub fn validate_destination(
         }
     }
 
-    // 4. Validate parent directory existence and writability
+    // 4. Validate that destination is a file path, not a directory
+    if trimmed.ends_with('\\') || trimmed.ends_with('/') {
+        return Err(AcquisitionFailureReason::InvalidDestination(format!(
+            "Destination '{}' ends with a path separator. Destination must be a file name (e.g. '{}\\evidence.raw').",
+            trimmed, trimmed.trim_end_matches(['\\', '/'])
+        )));
+    }
+
+    if dest_path.is_dir() {
+        return Err(AcquisitionFailureReason::InvalidDestination(format!(
+            "Destination '{}' is an existing directory. Please include a target image file name (e.g. '{}\\evidence.raw').",
+            trimmed, trimmed
+        )));
+    }
+
+    // 5. Validate parent directory existence and writability
     let parent_dir = dest_path.parent().unwrap_or_else(|| Path::new("."));
     if !parent_dir.exists() {
         std::fs::create_dir_all(parent_dir).map_err(|e| {
@@ -69,7 +84,7 @@ pub fn validate_destination(
         })?;
     }
 
-    // 5. Existing destination check
+    // 6. Existing destination file check
     if dest_path.exists() && !allow_overwrite {
         return Err(AcquisitionFailureReason::DestinationAlreadyExists(
             dest_path.to_string_lossy().to_string(),

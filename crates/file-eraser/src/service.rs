@@ -186,10 +186,19 @@ impl FileEraserService {
 
     /// Fetches a previously generated plan by ID.
     pub async fn get_plan(&self, plan_id: &str) -> Result<FileErasePlan, LocardError> {
+        let trimmed = plan_id.trim();
+        if trimmed.is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_REQUIRED: An explicit, validated sanitization plan is required before executing erasure.".to_string(),
+            ));
+        }
         let p = self.plans.read().await;
-        p.get(plan_id)
+        p.get(trimmed)
             .cloned()
-            .ok_or_else(|| LocardError::Operation(format!("Plan '{}' not found", plan_id)))
+            .ok_or_else(|| LocardError::SecurityViolation(format!(
+                "SANITIZATION_PLAN_REQUIRED: Sanitization plan '{}' not found or has expired. A valid plan must be generated first.",
+                plan_id
+            )))
     }
 
     /// Executes file erasure after validating two-stage confirmation challenge and checking TOCTOU snapshot.
@@ -205,6 +214,23 @@ impl FileEraserService {
         on_progress: Option<&SanitizerProgress>,
     ) -> Result<FileEraseResult, LocardError> {
         let plan = self.get_plan(plan_id).await?;
+
+        // Validate plan expiration (> 3600 seconds)
+        if let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&plan.created_at) {
+            let age_secs = (Utc::now() - created_at.with_timezone(&Utc)).num_seconds();
+            if age_secs > 3600 {
+                return Err(LocardError::SecurityViolation(format!(
+                    "SANITIZATION_PLAN_INVALID: Plan '{}' has expired (age: {}s > 3600s). Generate a new sanitization plan.",
+                    plan.plan_id, age_secs
+                )));
+            }
+        }
+        if plan.canonical_path.trim().is_empty() || plan.target_path.trim().is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_INVALID: Plan does not specify a valid target path.".to_string(),
+            ));
+        }
+
         let started_at = Utc::now().to_rfc3339();
 
         // 1. Validate confirmation through SafetyEngine
@@ -414,6 +440,23 @@ impl FileEraserService {
         on_progress: Option<&FolderProgress>,
     ) -> Result<FileEraseResult, LocardError> {
         let plan = self.get_plan(plan_id).await?;
+
+        // Validate plan expiration (> 3600 seconds)
+        if let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&plan.created_at) {
+            let age_secs = (Utc::now() - created_at.with_timezone(&Utc)).num_seconds();
+            if age_secs > 3600 {
+                return Err(LocardError::SecurityViolation(format!(
+                    "SANITIZATION_PLAN_INVALID: Plan '{}' has expired (age: {}s > 3600s). Generate a new sanitization plan.",
+                    plan.plan_id, age_secs
+                )));
+            }
+        }
+        if plan.canonical_path.trim().is_empty() || plan.target_path.trim().is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_INVALID: Plan does not specify a valid target path.".to_string(),
+            ));
+        }
+
         let started_at = Utc::now().to_rfc3339();
 
         let safety_decision = self.safety.confirm_destructive_operation(

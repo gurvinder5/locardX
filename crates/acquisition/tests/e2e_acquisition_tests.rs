@@ -1,8 +1,8 @@
 use locardx_acquisition::{
     validate_destination, validate_source_device_id, AcquisitionArtifact,
-    AcquisitionDeviceSnapshot, AcquisitionEngine, AcquisitionFailureReason, AcquisitionProgress,
-    AcquisitionResult, AcquisitionService, AcquisitionSourceReader, AcquisitionStatus,
-    FaultInjectableAcquisitionReader, FaultInjectionMode, StreamingSha256Hasher,
+    AcquisitionDeviceSnapshot, AcquisitionEngine, AcquisitionEngineError, AcquisitionFailureReason,
+    AcquisitionProgress, AcquisitionResult, AcquisitionService, AcquisitionSourceReader,
+    AcquisitionStatus, FaultInjectableAcquisitionReader, FaultInjectionMode, StreamingSha256Hasher,
 };
 use locardx_audit::AuditService;
 use locardx_database::Database;
@@ -243,7 +243,7 @@ fn test_06_cooperative_cancellation_cleans_up_destination() {
         Some(&on_progress),
     );
 
-    assert!(matches!(res, Err(AcquisitionFailureReason::Cancelled)));
+    assert!(matches!(res, Err(AcquisitionEngineError { reason: AcquisitionFailureReason::Cancelled, .. })));
     // Incomplete file must be deleted upon cancellation cleanup
     assert!(!dest_file.exists());
 }
@@ -273,7 +273,7 @@ fn test_07_short_read_detection() {
     );
 
     assert!(
-        matches!(res, Err(AcquisitionFailureReason::ShortRead { expected, actual }) if expected == capacity && actual < capacity)
+        matches!(res, Err(AcquisitionEngineError { reason: AcquisitionFailureReason::ShortRead { expected, actual }, .. }) if expected == capacity && actual < capacity)
     );
     assert!(!dest_file.exists());
 }
@@ -299,7 +299,7 @@ fn test_08_mid_stream_read_io_error_handling() {
         None,
     );
 
-    assert!(matches!(res, Err(AcquisitionFailureReason::ReadError(_))));
+    assert!(matches!(res, Err(AcquisitionEngineError { reason: AcquisitionFailureReason::ReadError(_), .. })));
     assert!(!dest_file.exists());
 }
 
@@ -400,6 +400,10 @@ fn test_11_incomplete_acquisition_cannot_produce_artifact() {
         elapsed_seconds: 0.0,
         average_throughput_mbps: 0.0,
         failure_reason: Some(AcquisitionFailureReason::SourceDisconnected),
+        diagnostics: None,
+        cleanup_status: None,
+        cleanup_error: None,
+        leftover_artifact_path: None,
         audit_reference: "AUDIT_REF".to_string(),
         started_at: "2026-09-12T00:00:00Z".to_string(),
         completed_at: "2026-09-12T00:00:01Z".to_string(),

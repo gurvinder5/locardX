@@ -61,6 +61,13 @@ export const FileEraserPage: React.FC = () => {
   const [warningAcknowledged, setWarningAcknowledged] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
 
+  // Reset plan when target path, scope, or method changes
+  React.useEffect(() => {
+    setPlan(null);
+    setResult(null);
+    setErrorMessage(null);
+  }, [targetPath, scope, method]);
+
   // Handlers
   const handleInspectAndPlan = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -38,6 +38,7 @@ import {
   planDriveErasure,
   executeDriveErasureSimulation,
   executeDriveErasureHardware,
+  getDriveErasureProgress,
   checkDriveEraserPrivileges,
   generateDriveErasureReport,
 } from '../services/driveEraser';
@@ -226,6 +227,14 @@ export const DriveEraserPage: React.FC = () => {
     };
   }, [selectedDeviceId, customDeviceId]);
 
+  // Reset plan when target device selection or execution mode changes
+  useEffect(() => {
+    setPlan(null);
+    setResult(null);
+    setReport(null);
+    setErrorMessage(null);
+  }, [selectedDeviceId, customDeviceId, executionMode]);
+
   const activeDevice = devices.find(
     (d) => d.device_id.toLowerCase() === (customDeviceId.trim() || selectedDeviceId).toLowerCase()
   );
@@ -234,7 +243,7 @@ export const DriveEraserPage: React.FC = () => {
     activeDevice?.is_system_device ||
     activeDevice?.classification === 'system_device' ||
     activeDevice?.classification === 'boot_device' ||
-    (customDeviceId.toLowerCase().includes('physicaldrive0') || customDeviceId.toLowerCase().includes('physicaldrive6'));
+    customDeviceId.toLowerCase().includes('physicaldrive0');
 
   const isLogicalVolume =
     customDeviceId.includes(':\\') ||
@@ -313,45 +322,45 @@ export const DriveEraserPage: React.FC = () => {
   const handleExecute = async () => {
     if (!plan || !confirmationId) return;
 
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
     try {
       setIsExecuting(true);
       setShowConfirmModal(false);
       setErrorMessage(null);
 
       const isHardware = plan.execution_mode === 'RealHardware';
+      const operationId = isHardware
+        ? `op-drive-hw-${Date.now()}`
+        : `op-drive-sim-${Date.now()}`;
 
-      // Live progress tracking
+      // Initialize real progress state
       setSimulationProgress({
-        operation_id: `op-drive-${Date.now()}`,
-        percentage: 10,
+        operation_id: operationId,
+        percentage: 0,
         bytes_processed: 0,
         total_bytes: plan.capacity_bytes,
         current_pass: 1,
         total_passes: plan.passes,
         current_stage: isHardware
-          ? 'Acquiring exclusive device lock & pre-execution validation'
-          : 'Simulating block overwrite',
-        elapsed_seconds: 0.1,
-        eta_seconds: isHardware ? null : 1.5,
+          ? 'Acquiring exclusive device lock & dismounting volumes'
+          : 'Initializing simulation environment',
+        elapsed_seconds: 0.0,
+        eta_seconds: null,
       });
 
-      const interval = setInterval(() => {
-        setSimulationProgress((prev) => {
-          if (!prev || prev.percentage >= 95) return prev;
-          const nextPct = prev.percentage + 15;
-          return {
-            ...prev,
-            percentage: nextPct,
-            bytes_processed: Math.floor((nextPct / 100) * plan.capacity_bytes),
-            current_stage: isHardware
-              ? nextPct > 70
-                ? 'Forensic post-sanitization readback verification'
-                : 'Writing sanitization patterns to physical sectors'
-              : 'Simulating block overwrite',
-            elapsed_seconds: parseFloat((prev.elapsed_seconds + 0.2).toFixed(1)),
-          };
-        });
-      }, 200);
+      // Poll real backend progress directly from Rust service
+      pollTimer = setInterval(async () => {
+        try {
+          const prog = await getDriveErasureProgress(operationId);
+          if (prog) {
+            setSimulationProgress(prog);
+          }
+        } catch {
+          // Ignore transient polling error
+        }
+      }, 250);
+
       let confirmValue = typedConfirmation.trim();
       if (confirmValue.toLowerCase().startsWith('confirm-erase ')) {
         confirmValue = confirmValue.substring('confirm-erase '.length).trim();
@@ -367,7 +376,7 @@ export const DriveEraserPage: React.FC = () => {
         ? await executeDriveErasureHardware({
             plan_id: plan.plan_id,
             confirmation_id: confirmationId,
-            operation_id: `op-drive-hw-${Date.now()}`,
+            operation_id: operationId,
             typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'hw-session',
@@ -375,13 +384,17 @@ export const DriveEraserPage: React.FC = () => {
         : await executeDriveErasureSimulation({
             plan_id: plan.plan_id,
             confirmation_id: confirmationId,
-            operation_id: `op-drive-sim-${Date.now()}`,
+            operation_id: operationId,
             typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'sim-session',
           });
 
-      clearInterval(interval);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+
       setSimulationProgress({
         operation_id: res.operation_id,
         percentage: 100,
@@ -396,6 +409,10 @@ export const DriveEraserPage: React.FC = () => {
 
       setResult(res);
     } catch (err: any) {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
       setErrorMessage(
         err?.message ||
           (plan.execution_mode === 'RealHardware'
@@ -403,6 +420,9 @@ export const DriveEraserPage: React.FC = () => {
             : 'Drive erasure simulation failed.')
       );
     } finally {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
       setIsExecuting(false);
     }
   };
@@ -524,7 +544,7 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
                 PRODUCTION HARDWARE BACKEND ACTIVE
               </span>
               <span className="text-xs font-semibold text-rose-800">
-                (Step 10B.3 Real Hardware Sanitizer Boundary)
+                (Low-Level Direct Hardware Sanitization)
               </span>
             </div>
             <p className="text-xs text-rose-900 leading-relaxed">

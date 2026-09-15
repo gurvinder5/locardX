@@ -463,3 +463,30 @@ export async function verifyAuditChain(): Promise<AuditChainVerification> {
     details: 'Audit log cryptographic hash chain verified. Zero tampering detected.',
   };
 }
+
+let mockActiveCase: Case | null = mockCases[0] || null;
+
+export async function getActiveCase(): Promise<Case | null> {
+  if (isTauriEnvironment()) {
+    return await invoke<Case | null>('get_active_case');
+  }
+  return mockActiveCase;
+}
+
+export async function setActiveCase(caseId: string): Promise<Case> {
+  if (isTauriEnvironment()) {
+    return await invoke<Case>('set_active_case', { caseId });
+  }
+  const found = mockCases.find((c) => c.case_id === caseId);
+  if (!found) throw new Error(`Case ${caseId} not found`);
+  mockActiveCase = found;
+  return found;
+}
+
+export async function clearActiveCase(): Promise<void> {
+  if (isTauriEnvironment()) {
+    await invoke<void>('clear_active_case');
+    return;
+  }
+  mockActiveCase = null;
+}

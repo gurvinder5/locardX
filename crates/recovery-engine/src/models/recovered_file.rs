@@ -10,6 +10,7 @@ pub enum FileCategory {
     Archives,
     Databases,
     TextFiles,
+    Media,
     Unknown,
 }
 
@@ -21,6 +22,7 @@ impl fmt::Display for FileCategory {
             Self::Archives => write!(f, "Archives"),
             Self::Databases => write!(f, "Databases"),
             Self::TextFiles => write!(f, "Text Files"),
+            Self::Media => write!(f, "Media"),
             Self::Unknown => write!(f, "Unknown"),
         }
     }
@@ -32,9 +34,33 @@ impl fmt::Display for FileCategory {
 pub enum FileType {
     Jpeg,
     Png,
+    Gif,
+    Bmp,
+    Tiff,
+    Webp,
     Pdf,
-    Zip,
+    #[serde(alias = "doc")]
+    OfficeDoc,
+    #[serde(alias = "docx")]
     OfficeDocx,
+    #[serde(alias = "xls")]
+    OfficeXls,
+    #[serde(alias = "xlsx")]
+    OfficeXlsx,
+    #[serde(alias = "ppt")]
+    OfficePpt,
+    #[serde(alias = "pptx")]
+    OfficePptx,
+    Rtf,
+    Zip,
+    #[serde(alias = "7z")]
+    SevenZip,
+    Rar,
+    Mp3,
+    Wav,
+    Mp4,
+    Avi,
+    Mkv,
     Sqlite,
     Text,
     #[serde(untagged)]
@@ -46,9 +72,26 @@ impl FileType {
         match self {
             Self::Jpeg => "jpg",
             Self::Png => "png",
+            Self::Gif => "gif",
+            Self::Bmp => "bmp",
+            Self::Tiff => "tiff",
+            Self::Webp => "webp",
             Self::Pdf => "pdf",
-            Self::Zip => "zip",
+            Self::OfficeDoc => "doc",
             Self::OfficeDocx => "docx",
+            Self::OfficeXls => "xls",
+            Self::OfficeXlsx => "xlsx",
+            Self::OfficePpt => "ppt",
+            Self::OfficePptx => "pptx",
+            Self::Rtf => "rtf",
+            Self::Zip => "zip",
+            Self::SevenZip => "7z",
+            Self::Rar => "rar",
+            Self::Mp3 => "mp3",
+            Self::Wav => "wav",
+            Self::Mp4 => "mp4",
+            Self::Avi => "avi",
+            Self::Mkv => "mkv",
             Self::Sqlite => "sqlite",
             Self::Text => "txt",
             Self::Unknown(_) => "bin",
@@ -59,11 +102,32 @@ impl FileType {
         match self {
             Self::Jpeg => "image/jpeg",
             Self::Png => "image/png",
+            Self::Gif => "image/gif",
+            Self::Bmp => "image/bmp",
+            Self::Tiff => "image/tiff",
+            Self::Webp => "image/webp",
             Self::Pdf => "application/pdf",
-            Self::Zip => "application/zip",
+            Self::OfficeDoc => "application/msword",
             Self::OfficeDocx => {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             }
+            Self::OfficeXls => "application/vnd.ms-excel",
+            Self::OfficeXlsx => {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+            Self::OfficePpt => "application/vnd.ms-powerpoint",
+            Self::OfficePptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Rtf => "application/rtf",
+            Self::Zip => "application/zip",
+            Self::SevenZip => "application/x-7z-compressed",
+            Self::Rar => "application/vnd.rar",
+            Self::Mp3 => "audio/mpeg",
+            Self::Wav => "audio/wav",
+            Self::Mp4 => "video/mp4",
+            Self::Avi => "video/x-msvideo",
+            Self::Mkv => "video/x-matroska",
             Self::Sqlite => "application/x-sqlite3",
             Self::Text => "text/plain",
             Self::Unknown(_) => "application/octet-stream",
@@ -72,9 +136,19 @@ impl FileType {
 
     pub fn category(&self) -> FileCategory {
         match self {
-            Self::Jpeg | Self::Png => FileCategory::Images,
-            Self::Pdf | Self::OfficeDocx => FileCategory::Documents,
-            Self::Zip => FileCategory::Archives,
+            Self::Jpeg | Self::Png | Self::Gif | Self::Bmp | Self::Tiff | Self::Webp => {
+                FileCategory::Images
+            }
+            Self::Pdf
+            | Self::OfficeDoc
+            | Self::OfficeDocx
+            | Self::OfficeXls
+            | Self::OfficeXlsx
+            | Self::OfficePpt
+            | Self::OfficePptx
+            | Self::Rtf => FileCategory::Documents,
+            Self::Zip | Self::SevenZip | Self::Rar => FileCategory::Archives,
+            Self::Mp3 | Self::Wav | Self::Mp4 | Self::Avi | Self::Mkv => FileCategory::Media,
             Self::Sqlite => FileCategory::Databases,
             Self::Text => FileCategory::TextFiles,
             Self::Unknown(_) => FileCategory::Unknown,
@@ -87,9 +161,26 @@ impl fmt::Display for FileType {
         match self {
             Self::Jpeg => write!(f, "JPEG"),
             Self::Png => write!(f, "PNG"),
+            Self::Gif => write!(f, "GIF"),
+            Self::Bmp => write!(f, "BMP"),
+            Self::Tiff => write!(f, "TIFF"),
+            Self::Webp => write!(f, "WEBP"),
             Self::Pdf => write!(f, "PDF"),
-            Self::Zip => write!(f, "ZIP"),
+            Self::OfficeDoc => write!(f, "DOC (CFBF)"),
             Self::OfficeDocx => write!(f, "DOCX (OpenXML)"),
+            Self::OfficeXls => write!(f, "XLS (CFBF)"),
+            Self::OfficeXlsx => write!(f, "XLSX (OpenXML)"),
+            Self::OfficePpt => write!(f, "PPT (CFBF)"),
+            Self::OfficePptx => write!(f, "PPTX (OpenXML)"),
+            Self::Rtf => write!(f, "RTF"),
+            Self::Zip => write!(f, "ZIP"),
+            Self::SevenZip => write!(f, "7-Zip"),
+            Self::Rar => write!(f, "RAR"),
+            Self::Mp3 => write!(f, "MP3"),
+            Self::Wav => write!(f, "WAV"),
+            Self::Mp4 => write!(f, "MP4"),
+            Self::Avi => write!(f, "AVI"),
+            Self::Mkv => write!(f, "MKV"),
             Self::Sqlite => write!(f, "SQLite DB"),
             Self::Text => write!(f, "Text"),
             Self::Unknown(name) => write!(f, "Unknown ({})", name),

@@ -69,6 +69,7 @@ fn main() {
             locardx_desktop::commands::get_real_storage_devices,
             locardx_desktop::commands::refresh_real_devices,
             locardx_desktop::commands::get_drive_erasure_result,
+            locardx_desktop::commands::get_drive_erasure_progress,
             locardx_desktop::commands::check_drive_eraser_privileges,
             locardx_desktop::commands::generate_drive_erasure_report,
             locardx_desktop::commands::get_drive_erasure_report,
@@ -82,6 +83,8 @@ fn main() {
             locardx_desktop::commands::get_acquisition_result,
             locardx_desktop::commands::get_acquisition_artifact,
             locardx_desktop::commands::verify_acquisition_artifact,
+            locardx_desktop::commands::check_acquisition_privileges,
+            locardx_desktop::commands::list_acquisition_records,
             locardx_desktop::commands::list_recovery_sources,
             locardx_desktop::commands::validate_recovery_source,
             locardx_desktop::commands::create_recovery_plan,
@@ -93,6 +96,8 @@ fn main() {
             locardx_desktop::commands::get_recovered_files,
             locardx_desktop::commands::export_recovered_files,
             locardx_desktop::commands::get_recovery_report,
+            locardx_desktop::commands::open_recovered_file,
+            locardx_desktop::commands::reveal_recovered_file,
             locardx_desktop::commands::create_case,
             locardx_desktop::commands::get_case,
             locardx_desktop::commands::list_cases,
@@ -111,6 +116,9 @@ fn main() {
             locardx_desktop::commands::verify_case_report_integrity,
             locardx_desktop::commands::list_audit_events,
             locardx_desktop::commands::verify_audit_chain,
+            locardx_desktop::commands::get_active_case,
+            locardx_desktop::commands::set_active_case,
+            locardx_desktop::commands::clear_active_case,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running LocardX Tauri desktop application");

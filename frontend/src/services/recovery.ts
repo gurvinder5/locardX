@@ -233,3 +233,26 @@ export async function getRecoveryReport(jobId: string): Promise<RecoveryReport |
 
   return null;
 }
+
+export async function openRecoveredFile(jobId: string, fileId: string): Promise<string> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string>('open_recovered_file', {
+      request: { job_id: jobId, file_id: fileId },
+    });
+  }
+
+  return `file://${jobId}/${fileId}`;
+}
+
+export async function revealRecoveredFile(jobId: string, fileId: string): Promise<string> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string>('reveal_recovered_file', {
+      request: { job_id: jobId, file_id: fileId },
+    });
+  }
+
+  return `workspace://${jobId}/${fileId}`;
+}
+

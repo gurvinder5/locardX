@@ -370,3 +370,48 @@ async fn test_system_and_boot_paths_rejected() {
         );
     }
 }
+
+#[tokio::test]
+async fn test_sanitization_plan_enforcement() {
+    let (service, _safety, _token) = setup_test_service();
+
+    // 1. Empty plan_id fails with SANITIZATION_PLAN_REQUIRED
+    let err_empty = service.get_plan("").await.unwrap_err();
+    match err_empty {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 2. Non-existent plan_id fails with SANITIZATION_PLAN_REQUIRED
+    let err_missing = service.get_plan("non-existent-plan-id").await.unwrap_err();
+    match err_missing {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 3. Execution attempt with non-existent plan fails with SANITIZATION_PLAN_REQUIRED
+    let exec_err = service
+        .execute_file_erasure(
+            "non-existent-plan",
+            "conf-1",
+            "op-1",
+            "C:\\dummy",
+            true,
+            "session-1",
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    match exec_err {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+}
+

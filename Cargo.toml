@@ -41,6 +41,7 @@ sha2 = "0.10"
 hex = "0.4"
 tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
+opener = { version = "0.7", features = ["reveal"] }
 
 # Internal Workspace Crates
 locardx-common = { path = "crates/common" }

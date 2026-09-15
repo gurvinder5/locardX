@@ -93,6 +93,25 @@ pub struct AcquisitionProgress {
     pub stage: String,
 }
 
+/// Verified filesystem outcome of partial-artifact cleanup after a failed or cancelled acquisition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ArtifactCleanupStatus {
+    CleanupConfirmed,
+    CleanupFailed,
+    CleanupNotRequired,
+}
+
+impl fmt::Display for ArtifactCleanupStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CleanupConfirmed => write!(f, "CLEANUP_CONFIRMED"),
+            Self::CleanupFailed => write!(f, "CLEANUP_FAILED"),
+            Self::CleanupNotRequired => write!(f, "CLEANUP_NOT_REQUIRED"),
+        }
+    }
+}
+
 /// Forensic acquisition lifecycle states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AcquisitionStatus {
@@ -168,6 +187,21 @@ impl std::str::FromStr for AcquisitionStatus {
     }
 }
 
+/// Structured diagnostic telemetry recorded on acquisition completion or failure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcquisitionDiagnostics {
+    pub source_device_id: String,
+    pub source_size_bytes: u64,
+    pub destination_path: String,
+    pub current_byte_offset: u64,
+    pub requested_read_size: usize,
+    pub bytes_actually_read: usize,
+    pub current_stage: String,
+    pub underlying_error: Option<String>,
+    pub win32_error_code: Option<u32>,
+    pub final_status: String,
+}
+
 /// Explicit forensic acquisition failure reasons.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "reason", content = "details")]
@@ -177,15 +211,43 @@ pub enum AcquisitionFailureReason {
     SourceMutated(String),
     InvalidDestination(String),
     DestinationOnSourceDisk,
-    InsufficientFreeSpace { required: u64, available: u64 },
+    InsufficientFreeSpace {
+        required: u64,
+        available: u64,
+    },
     DestinationAlreadyExists(String),
+    PermissionDenied {
+        device_id: String,
+        win32_error: u32,
+        message: String,
+    },
     ReadError(String),
-    ShortRead { expected: u64, actual: u64 },
+    DeviceIoError {
+        device_id: String,
+        offset: u64,
+        requested_bytes: usize,
+        bytes_read: usize,
+        win32_error: Option<u32>,
+        message: String,
+    },
+    ShortRead {
+        expected: u64,
+        actual: u64,
+    },
     WriteError(String),
-    HashMismatch { computed: String, expected: String },
+    HashMismatch {
+        computed: String,
+        expected: String,
+    },
     Cancelled,
     Interrupted,
     Unknown(String),
+}
+
+impl AcquisitionFailureReason {
+    pub fn message(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl fmt::Display for AcquisitionFailureReason {
@@ -215,7 +277,39 @@ impl fmt::Display for AcquisitionFailureReason {
             Self::DestinationAlreadyExists(path) => {
                 write!(f, "Destination file already exists: {}", path)
             }
+            Self::PermissionDenied {
+                device_id,
+                win32_error,
+                message,
+            } => {
+                write!(
+                    f,
+                    "Access Denied on device '{}' (Win32 error {}): {}",
+                    device_id, win32_error, message
+                )
+            }
             Self::ReadError(msg) => write!(f, "Read failure from source: {}", msg),
+            Self::DeviceIoError {
+                device_id,
+                offset,
+                message,
+                win32_error,
+                ..
+            } => {
+                if let Some(code) = win32_error {
+                    write!(
+                        f,
+                        "Device I/O read failure on '{}' at offset {} (Win32 error {}): {}",
+                        device_id, offset, code, message
+                    )
+                } else {
+                    write!(
+                        f,
+                        "Device I/O read failure on '{}' at offset {}: {}",
+                        device_id, offset, message
+                    )
+                }
+            }
             Self::ShortRead { expected, actual } => {
                 write!(
                     f,
@@ -256,6 +350,17 @@ pub struct AcquisitionResult {
     pub elapsed_seconds: f64,
     pub average_throughput_mbps: f64,
     pub failure_reason: Option<AcquisitionFailureReason>,
+    #[serde(default)]
+    pub diagnostics: Option<AcquisitionDiagnostics>,
+    /// Filesystem-verified cleanup outcome. Never inferred from a delete attempt alone.
+    #[serde(default)]
+    pub cleanup_status: Option<ArtifactCleanupStatus>,
+    /// OS/filesystem error when cleanup_status is CLEANUP_FAILED.
+    #[serde(default)]
+    pub cleanup_error: Option<String>,
+    /// Path of a leftover partial artifact when deletion could not be confirmed.
+    #[serde(default)]
+    pub leftover_artifact_path: Option<String>,
     pub audit_reference: String,
     pub started_at: String,
     pub completed_at: String,
@@ -273,4 +378,24 @@ pub struct AcquisitionArtifact {
     pub acquisition_timestamp: String,
     pub is_verified: bool,
     pub audit_reference: String,
+}
+
+/// DTO representing an acquisition record in history and audit reports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AcquisitionRecordDto {
+    pub acquisition_id: String,
+    pub operation_id: String,
+    pub actor_id: Option<String>,
+    pub source_device_id: String,
+    pub source_display_name: String,
+    pub source_serial: Option<String>,
+    pub source_capacity_bytes: u64,
+    pub destination_path: String,
+    pub image_format: String,
+    pub image_size_bytes: u64,
+    pub image_sha256: String,
+    pub status: String,
+    pub case_id: Option<String>,
+    pub started_at: String,
+    pub completed_at: String,
 }

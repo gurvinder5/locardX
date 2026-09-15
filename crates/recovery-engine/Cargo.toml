@@ -18,6 +18,7 @@ chrono = { workspace = true }
 tracing = { workspace = true }
 rusqlite = { workspace = true }
 thiserror = { workspace = true }
+opener = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.27"

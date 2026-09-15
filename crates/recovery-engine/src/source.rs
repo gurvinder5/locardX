@@ -6,7 +6,6 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use uuid::Uuid;
 
 /// Immutable forensic snapshot of a verified recovery evidence source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,7 +74,7 @@ pub fn validate_acquisition_artifact(
     }
 
     Ok(RecoverySourceSnapshot {
-        source_id: format!("src-rec-{}", Uuid::new_v4()),
+        source_id: format!("src-acq-{}", artifact.acquisition_id),
         acquisition_id: artifact.acquisition_id.clone(),
         image_path: artifact.image_path.clone(),
         image_size_bytes: actual_size,

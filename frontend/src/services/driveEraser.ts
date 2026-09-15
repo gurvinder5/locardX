@@ -2,6 +2,7 @@ import {
   DriveCapabilities,
   DriveCapabilitiesAssessment,
   DriveErasePlan,
+  DriveEraseProgress,
   DriveEraseResult,
   DrivePrivilegeStatus,
   DriveSanitizationReport,
@@ -466,6 +467,19 @@ export async function getDriveErasureResult(
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<DriveEraseResult | null>('get_drive_erasure_result', {
+      operationId,
+    });
+  }
+
+  return null;
+}
+
+export async function getDriveErasureProgress(
+  operationId: string
+): Promise<DriveEraseProgress | null> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<DriveEraseProgress | null>('get_drive_erasure_progress', {
       operationId,
     });
   }

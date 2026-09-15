@@ -442,6 +442,7 @@ impl Database {
                 elapsed_seconds       REAL NOT NULL,
                 failure_reason        TEXT,
                 audit_reference       TEXT NOT NULL,
+                case_id               TEXT,
                 started_at            TEXT NOT NULL,
                 completed_at          TEXT NOT NULL
             );
@@ -475,12 +476,13 @@ impl Database {
                 elapsed_seconds      REAL NOT NULL DEFAULT 0.0,
                 failure_reason       TEXT,
                 audit_reference      TEXT NOT NULL,
+                case_id              TEXT,
                 started_at           TEXT NOT NULL,
                 completed_at         TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS recovery_sources (
                 source_id            TEXT PRIMARY KEY,
-                acquisition_id       TEXT NOT NULL,
+                acquisition_id       TEXT NOT NULL UNIQUE,
                 image_path           TEXT NOT NULL,
                 image_size_bytes     INTEGER NOT NULL,
                 image_sha256         TEXT NOT NULL,
@@ -679,6 +681,51 @@ impl Database {
             );
             let _ = conn.execute(
                 "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (13, datetime('now'));",
+                [],
+            );
+        }
+
+        // Migration 014: Case Context Tracking & Recovery Source Deduplication
+        let migration_14_applied: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 14",
+                [],
+                |row| {
+                    let count: i64 = row.get(0)?;
+                    Ok(count > 0)
+                },
+            )
+            .unwrap_or(false);
+
+        if !migration_14_applied {
+            // 1. Add case_id to acquisition_records if missing
+            let _ = conn.execute("ALTER TABLE acquisition_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_acq_records_case ON acquisition_records(case_id);",
+                [],
+            );
+
+            // 2. Add case_id to recovery_jobs if missing
+            let _ = conn.execute("ALTER TABLE recovery_jobs ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_recovery_jobs_case ON recovery_jobs(case_id);",
+                [],
+            );
+
+            // 3. Clean up any existing accidental duplicate recovery sources before creating unique index
+            let _ = conn.execute(
+                "DELETE FROM recovery_sources WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM recovery_sources GROUP BY acquisition_id
+                );",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_sources_acq_unique ON recovery_sources(acquisition_id);",
+                [],
+            );
+
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (14, datetime('now'));",
                 [],
             );
         }

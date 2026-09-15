@@ -19,6 +19,7 @@ pub struct CreateRecoveryPlanRequest {
 pub struct StartRecoveryRequest {
     pub plan: RecoveryPlan,
     pub session_token: Option<String>,
+    pub operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,10 +43,17 @@ pub async fn validate_recovery_source(
     state: State<'_, AppState>,
     artifact: AcquisitionArtifact,
 ) -> Result<RecoverySourceSnapshot, SafeErrorResponse> {
-    state
-        .recovery
-        .validate_source(&artifact, None)
-        .map_err(|e| SafeErrorResponse::from(&e))
+    let recovery_svc = state.recovery.clone();
+    tokio::task::spawn_blocking(move || {
+        recovery_svc
+            .validate_source(&artifact, None)
+            .map_err(|e| SafeErrorResponse::from(&e))
+    })
+    .await
+    .map_err(|e| SafeErrorResponse {
+        code: "THREAD_JOIN_ERROR".to_string(),
+        message: format!("Worker thread failure during source validation: {}", e),
+    })?
 }
 
 #[tauri::command]
@@ -53,23 +61,12 @@ pub async fn create_recovery_plan(
     state: State<'_, AppState>,
     request: CreateRecoveryPlanRequest,
 ) -> Result<RecoveryPlan, SafeErrorResponse> {
-    let actor_id = request
-        .session_token
-        .as_deref()
-        .and_then(|t| state.auth.get_current_user(t).ok())
-        .map(|u| u.username);
-
+    // Active Case Policy: Fail-closed if no active case or if case is closed
     state
-        .recovery
-        .create_plan(&request.artifact, request.options, actor_id.as_deref())
-        .map_err(|e| SafeErrorResponse::from(&e))
-}
+        .case_service
+        .require_active_case()
+        .map_err(|e| SafeErrorResponse::from(&e))?;
 
-#[tauri::command]
-pub async fn start_recovery(
-    state: State<'_, AppState>,
-    request: StartRecoveryRequest,
-) -> Result<RecoveryResult, SafeErrorResponse> {
     let actor_id = request
         .session_token
         .as_deref()
@@ -78,14 +75,78 @@ pub async fn start_recovery(
 
     let recovery_svc = state.recovery.clone();
     tokio::task::spawn_blocking(move || {
-        recovery_svc.execute_recovery(&request.plan, actor_id.as_deref())
+        recovery_svc
+            .create_plan(&request.artifact, request.options, actor_id.as_deref())
+            .map_err(|e| SafeErrorResponse::from(&e))
+    })
+    .await
+    .map_err(|e| SafeErrorResponse {
+        code: "THREAD_JOIN_ERROR".to_string(),
+        message: format!("Worker thread failure during plan creation: {}", e),
+    })?
+}
+
+#[tauri::command]
+pub async fn start_recovery(
+    state: State<'_, AppState>,
+    request: StartRecoveryRequest,
+) -> Result<RecoveryResult, SafeErrorResponse> {
+    // Active Case Policy: Fail-closed if no active case or if case is closed
+    let active_case = state
+        .case_service
+        .require_active_case()
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+    let case_id = active_case.case_id.clone();
+
+    let actor_id = request
+        .session_token
+        .as_deref()
+        .and_then(|t| state.auth.get_current_user(t).ok())
+        .map(|u| u.username);
+
+    let recovery_svc = state.recovery.clone();
+    let op_id = request.operation_id.clone();
+    let actor_id_cloned = actor_id.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        recovery_svc.execute_recovery_with_operation_id(&request.plan, actor_id_cloned.as_deref(), op_id.as_deref())
     })
     .await
     .map_err(|e| SafeErrorResponse {
         code: "THREAD_JOIN_ERROR".to_string(),
         message: format!("Recovery worker thread failure: {}", e),
     })?
-    .map_err(|e| SafeErrorResponse::from(&e))
+    .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    // Associate recovery job with the active case
+    let user = request
+        .session_token
+        .as_deref()
+        .and_then(|t| state.auth.get_current_user(t).ok())
+        .unwrap_or_else(|| locardx_auth::PublicUser {
+            user_id: "sys-operator".to_string(),
+            username: actor_id.unwrap_or_else(|| "operator".to_string()),
+            role: locardx_auth::UserRole::Operator,
+            display_name: Some("Forensic Operator".to_string()),
+            enabled: true,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            last_login_at: None,
+            metadata_json: "{}".to_string(),
+        });
+
+    let _ = state.case_service.associate_operation(
+        &case_id,
+        &result.job_id,
+        "Recovery",
+        &user,
+        Some(&format!(
+            "Forensic file recovery from {} -> {} recovered files",
+            result.source_image_path, result.files_recovered
+        )),
+    );
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -165,4 +226,46 @@ pub async fn get_recovery_report(
         .recovery
         .get_report(&job_id)
         .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenRecoveredFileRequest {
+    pub job_id: String,
+    pub file_id: String,
+}
+
+#[tauri::command]
+pub async fn open_recovered_file(
+    state: State<'_, AppState>,
+    request: OpenRecoveredFileRequest,
+) -> Result<String, SafeErrorResponse> {
+    let recovery_svc = state.recovery.clone();
+    tokio::task::spawn_blocking(move || {
+        recovery_svc
+            .open_recovered_file(&request.job_id, &request.file_id)
+            .map_err(|e| SafeErrorResponse::from(&e))
+    })
+    .await
+    .map_err(|e| SafeErrorResponse {
+        code: "THREAD_JOIN_ERROR".to_string(),
+        message: format!("Worker thread failure during file opening: {}", e),
+    })?
+}
+
+#[tauri::command]
+pub async fn reveal_recovered_file(
+    state: State<'_, AppState>,
+    request: OpenRecoveredFileRequest,
+) -> Result<String, SafeErrorResponse> {
+    let recovery_svc = state.recovery.clone();
+    tokio::task::spawn_blocking(move || {
+        recovery_svc
+            .reveal_recovered_file(&request.job_id, &request.file_id)
+            .map_err(|e| SafeErrorResponse::from(&e))
+    })
+    .await
+    .map_err(|e| SafeErrorResponse {
+        code: "THREAD_JOIN_ERROR".to_string(),
+        message: format!("Worker thread failure during file reveal: {}", e),
+    })?
 }

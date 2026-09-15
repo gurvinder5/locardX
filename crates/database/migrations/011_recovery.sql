@@ -16,13 +16,14 @@ CREATE TABLE IF NOT EXISTS recovery_jobs (
     elapsed_seconds      REAL NOT NULL DEFAULT 0.0,
     failure_reason       TEXT,
     audit_reference      TEXT NOT NULL,
+    case_id              TEXT,
     started_at           TEXT NOT NULL,
     completed_at         TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS recovery_sources (
     source_id            TEXT PRIMARY KEY,
-    acquisition_id       TEXT NOT NULL,
+    acquisition_id       TEXT NOT NULL UNIQUE,
     image_path           TEXT NOT NULL,
     image_size_bytes     INTEGER NOT NULL,
     image_sha256         TEXT NOT NULL,

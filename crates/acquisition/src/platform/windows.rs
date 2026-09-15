@@ -128,13 +128,20 @@ impl AcquisitionSourceReader for WindowsAcquisitionReader {
 
         if handle == INVALID_HANDLE_VALUE {
             let err = unsafe { GetLastError() };
+            if err == 5 {
+                return Err(AcquisitionFailureReason::PermissionDenied {
+                    device_id: canonical_id,
+                    win32_error: 5,
+                    message: "Access Denied: Administrator elevation required to open raw physical storage device for acquisition. Please launch LocardX as Administrator.".to_string(),
+                });
+            }
             return Err(AcquisitionFailureReason::ReadError(format!(
                 "Failed to open source physical device '{}' for read-only access: Win32 error {}",
                 device_id, err
             )));
         }
 
-        // Query capacity from the opened handle
+        // Query capacity & sector size from the opened handle
         let mut geom_ex: DiskGeometryEx = unsafe { std::mem::zeroed() };
         let mut bytes_returned = 0u32;
         let ok = unsafe {
@@ -150,15 +157,24 @@ impl AcquisitionSourceReader for WindowsAcquisitionReader {
             )
         };
 
-        let total_size = if ok != 0 && geom_ex.disk_size > 0 {
-            geom_ex.disk_size as u64
+        let (total_size, sector_size) = if ok != 0 && geom_ex.disk_size > 0 {
+            (
+                geom_ex.disk_size as u64,
+                if geom_ex.geometry.bytes_per_sector > 0 {
+                    geom_ex.geometry.bytes_per_sector
+                } else {
+                    512
+                },
+            )
         } else {
-            0
+            (0, 512)
         };
 
         Ok(Box::new(WindowsReadOnlyStream {
+            device_id: canonical_id,
             handle,
             total_size,
+            sector_size,
             current_offset: 0,
         }))
     }
@@ -379,44 +395,101 @@ impl AcquisitionSourceReader for WindowsAcquisitionReader {
 
 /// Windows native read-only device stream.
 pub struct WindowsReadOnlyStream {
-    handle: *mut c_void,
-    total_size: u64,
-    current_offset: u64,
+    pub(crate) device_id: String,
+    pub(crate) handle: *mut c_void,
+    pub(crate) total_size: u64,
+    pub(crate) sector_size: u32,
+    pub(crate) current_offset: u64,
 }
 
 impl ReadOnlyDeviceStream for WindowsReadOnlyStream {
     fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, AcquisitionFailureReason> {
-        let mut bytes_read = 0u32;
-        let to_read = buffer.len().min(u32::MAX as usize) as u32;
-
-        let ok = unsafe {
-            ReadFile(
-                self.handle,
-                buffer.as_mut_ptr() as *mut c_void,
-                to_read,
-                &mut bytes_read,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if ok == 0 {
-            let err = unsafe { GetLastError() };
-            if err == 38 {
-                // ERROR_HANDLE_EOF
-                return Ok(0);
-            }
-            return Err(AcquisitionFailureReason::ReadError(format!(
-                "ReadFile failed at offset {}: Win32 error {}",
-                self.current_offset, err
-            )));
+        // If we reached or exceeded the total device size, return EOF
+        if self.total_size > 0 && self.current_offset >= self.total_size {
+            return Ok(0);
         }
 
-        self.current_offset += bytes_read as u64;
-        Ok(bytes_read as usize)
+        // Clamp read request so we never read beyond reported physical capacity
+        let remaining = if self.total_size > 0 {
+            (self.total_size.saturating_sub(self.current_offset)) as usize
+        } else {
+            buffer.len()
+        };
+
+        let target_to_read = buffer.len().min(remaining);
+        if target_to_read == 0 {
+            return Ok(0);
+        }
+
+        // Loop to handle partial reads
+        let mut total_bytes_read = 0usize;
+        while total_bytes_read < target_to_read {
+            let slice = &mut buffer[total_bytes_read..target_to_read];
+            let requested = slice.len().min(u32::MAX as usize) as u32;
+            let mut chunk_read = 0u32;
+
+            let ok = unsafe {
+                ReadFile(
+                    self.handle,
+                    slice.as_mut_ptr() as *mut c_void,
+                    requested,
+                    &mut chunk_read,
+                    std::ptr::null_mut(),
+                )
+            };
+
+            if ok == 0 {
+                let err = unsafe { GetLastError() };
+                if err == 38 {
+                    // ERROR_HANDLE_EOF
+                    break;
+                }
+                if err == 1167 {
+                    // ERROR_DEVICE_NOT_CONNECTED
+                    return Err(AcquisitionFailureReason::SourceDisconnected);
+                }
+                if err == 5 {
+                    return Err(AcquisitionFailureReason::PermissionDenied {
+                        device_id: self.device_id.clone(),
+                        win32_error: 5,
+                        message: format!(
+                            "Access denied reading physical device at byte offset {}",
+                            self.current_offset + total_bytes_read as u64
+                        ),
+                    });
+                }
+                return Err(AcquisitionFailureReason::DeviceIoError {
+                    device_id: self.device_id.clone(),
+                    offset: self.current_offset + total_bytes_read as u64,
+                    requested_bytes: requested as usize,
+                    bytes_read: total_bytes_read,
+                    win32_error: Some(err),
+                    message: format!("ReadFile Win32 error {}", err),
+                });
+            }
+
+            if chunk_read == 0 {
+                // Device returned 0 bytes without error -> EOF
+                break;
+            }
+
+            total_bytes_read += chunk_read as usize;
+        }
+
+        self.current_offset += total_bytes_read as u64;
+        Ok(total_bytes_read)
     }
 
     fn total_bytes(&self) -> u64 {
         self.total_size
+    }
+
+    fn sector_size(&self) -> u32 {
+        self.sector_size
+    }
+
+    fn current_offset(&self) -> u64 {
+        self.current_offset
     }
 }
 

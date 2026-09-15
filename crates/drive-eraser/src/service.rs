@@ -35,6 +35,7 @@ pub struct DriveEraserService {
     lock_registry: Arc<DeviceLockRegistry>,
     executor: Option<Arc<dyn DriveHardwareExecutor>>,
     plans: Arc<RwLock<HashMap<String, DriveErasePlan>>>,
+    latest_progress: Arc<std::sync::RwLock<HashMap<String, DriveEraseProgress>>>,
 }
 
 impl DriveEraserService {
@@ -49,6 +50,7 @@ impl DriveEraserService {
         )));
         let execution_gate = Arc::new(RealHardwareExecutionGate::new());
         let lock_registry = Arc::new(DeviceLockRegistry::new());
+        let latest_progress = Arc::new(std::sync::RwLock::new(HashMap::new()));
         Self {
             db,
             audit,
@@ -59,7 +61,18 @@ impl DriveEraserService {
             lock_registry,
             executor: None,
             plans: Arc::new(RwLock::new(HashMap::new())),
+            latest_progress,
         }
+    }
+
+    pub fn record_progress(&self, progress: DriveEraseProgress) {
+        if let Ok(mut map) = self.latest_progress.write() {
+            map.insert(progress.operation_id.clone(), progress);
+        }
+    }
+
+    pub fn get_progress(&self, operation_id: &str) -> Option<DriveEraseProgress> {
+        self.latest_progress.read().ok()?.get(operation_id).cloned()
     }
 
     pub fn with_execution_gate(mut self, execution_gate: Arc<RealHardwareExecutionGate>) -> Self {
@@ -196,7 +209,7 @@ impl DriveEraserService {
         if execution_mode == ExecutionMode::RealHardware {
             if !self.execution_gate.is_enabled() {
                 return Err(LocardError::SecurityViolation(
-                    "Real hardware execution is permanently disabled in Step 10A; only Simulation is permitted.".to_string(),
+                    "Real hardware execution is currently disabled in the execution gate.".to_string(),
                 ));
             }
 
@@ -297,10 +310,19 @@ impl DriveEraserService {
 
     /// Fetches a previously generated plan by ID.
     pub async fn get_plan(&self, plan_id: &str) -> Result<DriveErasePlan, LocardError> {
+        let trimmed = plan_id.trim();
+        if trimmed.is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_REQUIRED: An explicit, validated sanitization plan is required before executing erasure.".to_string(),
+            ));
+        }
         let map = self.plans.read().await;
-        map.get(plan_id)
+        map.get(trimmed)
             .cloned()
-            .ok_or_else(|| LocardError::Operation(format!("Plan '{}' not found", plan_id)))
+            .ok_or_else(|| LocardError::SecurityViolation(format!(
+                "SANITIZATION_PLAN_REQUIRED: Sanitization plan '{}' not found or has expired. A valid plan must be generated first.",
+                plan_id
+            )))
     }
 
     /// Executes simulated drive sanitization, enforcing two-stage confirmation and live TOCTOU validation.
@@ -319,11 +341,28 @@ impl DriveEraserService {
         // INVARIANT 1: Structural prohibition of real hardware writes
         if execution_mode == ExecutionMode::RealHardware {
             return Err(LocardError::SecurityViolation(
-                "CRITICAL INVARIANT: Real hardware execution is permanently disabled in Step 10A; only Simulation is permitted.".to_string(),
+                "Real hardware execution is not permitted via the simulation endpoint; use execute_drive_erasure_with_gate.".to_string(),
             ));
         }
 
         let plan = self.get_plan(plan_id).await?;
+
+        // Validate plan expiration (> 3600 seconds)
+        if let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&plan.created_at) {
+            let age_secs = (Utc::now() - created_at.with_timezone(&Utc)).num_seconds();
+            if age_secs > 3600 {
+                return Err(LocardError::SecurityViolation(format!(
+                    "SANITIZATION_PLAN_INVALID: Plan '{}' has expired (age: {}s > 3600s). Generate a new sanitization plan.",
+                    plan.plan_id, age_secs
+                )));
+            }
+        }
+        if plan.physical_device_id.trim().is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_INVALID: Plan does not contain a valid target physical device ID.".to_string(),
+            ));
+        }
+
         let started_at = Utc::now().to_rfc3339();
 
         // 1. Verify confirmation details
@@ -384,8 +423,19 @@ impl DriveEraserService {
         );
 
         // 5. Execute simulated sanitization
+        let progress_store = Arc::clone(&self.latest_progress);
+        let wrapped_on_progress = move |p: DriveEraseProgress| {
+            if let Ok(mut map) = progress_store.write() {
+                map.insert(p.operation_id.clone(), p.clone());
+            }
+            if let Some(cb) = on_progress {
+                cb(p);
+            }
+        };
+        let effective_progress: &(dyn Fn(DriveEraseProgress) + Send + Sync) = &wrapped_on_progress;
+
         let sanitizer = resolve_sanitizer_backend(plan.method);
-        let sim_result = sanitizer.simulate_erasure(&plan, is_cancelled, on_progress);
+        let sim_result = sanitizer.simulate_erasure(&plan, is_cancelled, Some(effective_progress));
 
         match sim_result {
             Ok((bytes_processed, elapsed_seconds)) => {
@@ -556,6 +606,23 @@ impl DriveEraserService {
         on_progress: Option<&(dyn Fn(DriveEraseProgress) + Send + Sync)>,
     ) -> Result<DriveEraseResult, LocardError> {
         let plan = self.get_plan(plan_id).await?;
+
+        // Validate plan expiration (> 3600 seconds)
+        if let Ok(created_at) = chrono::DateTime::parse_from_rfc3339(&plan.created_at) {
+            let age_secs = (Utc::now() - created_at.with_timezone(&Utc)).num_seconds();
+            if age_secs > 3600 {
+                return Err(LocardError::SecurityViolation(format!(
+                    "SANITIZATION_PLAN_INVALID: Plan '{}' has expired (age: {}s > 3600s). Generate a new sanitization plan.",
+                    plan.plan_id, age_secs
+                )));
+            }
+        }
+        if plan.physical_device_id.trim().is_empty() {
+            return Err(LocardError::SecurityViolation(
+                "SANITIZATION_PLAN_INVALID: Plan does not contain a valid target physical device ID.".to_string(),
+            ));
+        }
+
         let started_at = Utc::now().to_rfc3339();
 
         // 1. Validate requested execution mode matches plan
@@ -611,10 +678,21 @@ impl DriveEraserService {
         }
 
         // 4. Dispatch based on execution mode
+        let progress_store = Arc::clone(&self.latest_progress);
+        let wrapped_on_progress = move |p: DriveEraseProgress| {
+            if let Ok(mut map) = progress_store.write() {
+                map.insert(p.operation_id.clone(), p.clone());
+            }
+            if let Some(cb) = on_progress {
+                cb(p);
+            }
+        };
+        let effective_progress: &(dyn Fn(DriveEraseProgress) + Send + Sync) = &wrapped_on_progress;
+
         let (bytes_processed, elapsed_seconds, verification, status, failure_reason, audit_events) =
             if execution_mode == ExecutionMode::Simulation {
                 let sanitizer = resolve_sanitizer_backend(plan.method);
-                let sim_result = sanitizer.execute(&permit, is_cancelled, on_progress);
+                let sim_result = sanitizer.execute(&permit, is_cancelled, Some(effective_progress));
 
                 match sim_result {
                     Ok((bytes, elapsed)) => {
@@ -668,7 +746,7 @@ impl DriveEraserService {
                     Some(Arc::clone(&self.hardware_provider)),
                 );
 
-                let real_result = sanitizer.execute_and_verify(&permit, is_cancelled, on_progress);
+                let real_result = sanitizer.execute_and_verify(&permit, is_cancelled, Some(effective_progress));
 
                 match real_result {
                     Ok((bytes, elapsed, verification)) => {

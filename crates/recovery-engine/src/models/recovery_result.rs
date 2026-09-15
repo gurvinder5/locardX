@@ -64,6 +64,9 @@ pub enum RecoveryFailureReason {
     Cancelled,
     Interrupted,
     CorruptImage(String),
+    FilesystemAnalysisFailed(String),
+    UnsupportedFilesystem(String),
+    CorruptFilesystem(String),
     Unknown(String),
 }
 
@@ -104,6 +107,15 @@ impl fmt::Display for RecoveryFailureReason {
             Self::Cancelled => write!(f, "Recovery job was cancelled by operator"),
             Self::Interrupted => write!(f, "Recovery job was interrupted by abnormal termination"),
             Self::CorruptImage(msg) => write!(f, "Evidence image corruption detected: {}", msg),
+            Self::FilesystemAnalysisFailed(msg) => {
+                write!(f, "Filesystem analysis failed: {}", msg)
+            }
+            Self::UnsupportedFilesystem(msg) => {
+                write!(f, "Unsupported filesystem: {}", msg)
+            }
+            Self::CorruptFilesystem(msg) => {
+                write!(f, "Corrupted filesystem structure: {}", msg)
+            }
             Self::Unknown(msg) => write!(f, "Recovery failure: {}", msg),
         }
     }
@@ -155,6 +167,18 @@ pub struct RecoveryProgress {
     pub elapsed_seconds: f64,
     pub files_found: usize,
     pub stage: String,
+    #[serde(default)]
+    pub filesystem_type: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
+    #[serde(default)]
+    pub entries_examined: usize,
+    #[serde(default)]
+    pub deleted_candidates: usize,
+    #[serde(default)]
+    pub files_validated: usize,
+    #[serde(default)]
+    pub current_operation: Option<String>,
 }
 
 /// Comprehensive outcome of an executed recovery operation.

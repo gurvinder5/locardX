@@ -56,6 +56,12 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
         file.read_exact(&mut buffer[..bytes_to_read])?;
 
         let candidates = detector.scan_buffer(&buffer[..bytes_to_read], current_offset);
+        tracing::trace!(
+            current_offset,
+            bytes_scanned = bytes_to_read,
+            candidates_found = candidates.len(),
+            "Completed sector buffer scan"
+        );
 
         for candidate in candidates {
             if let Some(token) = cancellation_token {
@@ -78,11 +84,23 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
             }
 
             candidates_evaluated += 1;
+            tracing::debug!(
+                offset = candidate.global_offset,
+                file_type = ?candidate.file_type,
+                "Evaluating candidate header"
+            );
 
-            // Read candidate payload up to max_size
+            // Read candidate payload up to max_size (capped at 32 MiB to avoid memory exhaustion)
             let max_read = (candidate.signature.max_size as usize)
-                .min((total_bytes - candidate.global_offset) as usize);
+                .min(total_bytes.saturating_sub(candidate.global_offset) as usize)
+                .min(32 * 1024 * 1024);
             if max_read < candidate.signature.min_size as usize {
+                tracing::debug!(
+                    offset = candidate.global_offset,
+                    available = max_read,
+                    min_required = candidate.signature.min_size,
+                    "Candidate rejected: remaining bytes less than format minimum"
+                );
                 continue;
             }
 
@@ -96,22 +114,115 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
 
             // Parse structure to find exact size and validity
             if let Some(parsed) = parse_file_structure(&candidate.file_type, &candidate_buf) {
-                let actual_size = parsed.detected_size.min(candidate_buf.len() as u64);
+                let mut actual_size = parsed.detected_size.min(candidate_buf.len() as u64);
                 if actual_size < candidate.signature.min_size {
                     continue;
                 }
 
-                let file_slice = &candidate_buf[..actual_size as usize];
-                let (val_status, sha256_hash, factors) = evaluate_candidate(
+                let mut file_payload = candidate_buf[..actual_size as usize].to_vec();
+                let mut is_frag = false;
+                let mut rec_method = RecoveryMethod::StructureCarving;
+
+                let (mut val_status, mut sha256_hash, mut factors) = evaluate_candidate(
                     &parsed.file_type,
-                    file_slice,
+                    &file_payload,
                     &registry,
                     false, // Carving only
                     true,  // Contiguous candidate
                 );
 
+                // Cluster-aware fragment reconstruction
+                if options.enable_fragment_reconstruction
+                    && (val_status != crate::models::ValidationStatus::Valid || !parsed.is_valid_structure)
+                {
+                    let cluster_size = 4096u64;
+                    let remainder = actual_size % cluster_size;
+                    let boundary_offset = if remainder == 0 {
+                        candidate.global_offset + actual_size
+                    } else {
+                        candidate.global_offset + (actual_size / cluster_size + 1) * cluster_size
+                    };
+
+                    // Search forward in subsequent clusters for continuation
+                    if boundary_offset < total_bytes {
+                        let lookahead_max = (boundary_offset + 2 * 1024 * 1024).min(total_bytes);
+                        let mut check_offset = boundary_offset;
+                        while check_offset + cluster_size <= lookahead_max {
+                            let mut cluster_buf = vec![0u8; cluster_size as usize];
+                            if file.seek(SeekFrom::Start(check_offset)).is_ok()
+                                && file.read_exact(&mut cluster_buf).is_ok()
+                            {
+                                // Check if this cluster contains end marker for candidate
+                                if let Some(footer) = &candidate.signature.footer_magic {
+                                    if cluster_buf.windows(footer.len()).any(|w| w == footer.as_slice()) {
+                                        // Attempt fragment reconstruction
+                                        let f1 = crate::fragmentation::fragment::create_fragment(
+                                            "temp-1",
+                                            0,
+                                            candidate.global_offset,
+                                            actual_size,
+                                            crate::models::FragmentType::Header,
+                                            0.8,
+                                        );
+                                        let f2 = crate::fragmentation::fragment::create_fragment(
+                                            "temp-1",
+                                            1,
+                                            check_offset,
+                                            cluster_size,
+                                            crate::models::FragmentType::Trailer,
+                                            0.8,
+                                        );
+                                        let outcome = crate::fragmentation::reconstruction::reconstruct_fragments(
+                                            &parsed.file_type,
+                                            vec![f1, f2],
+                                            vec![file_payload.clone(), cluster_buf.clone()],
+                                        );
+                                        if outcome.result == crate::models::ReconstructionResult::Reconstructed
+                                            || outcome.validation_status == crate::models::ValidationStatus::Valid
+                                        {
+                                            file_payload = outcome.assembled_bytes;
+                                            actual_size = file_payload.len() as u64;
+                                            is_frag = true;
+                                            rec_method = RecoveryMethod::FragmentReconstruction;
+                                            let (new_val, new_hash, new_fac) = evaluate_candidate(
+                                                &parsed.file_type,
+                                                &file_payload,
+                                                &registry,
+                                                false,
+                                                false, // not physically contiguous
+                                            );
+                                            val_status = new_val;
+                                            sha256_hash = new_hash;
+                                            factors = new_fac;
+                                            tracing::info!(
+                                                offset = candidate.global_offset,
+                                                continuation_offset = check_offset,
+                                                file_type = ?parsed.file_type,
+                                                "Successfully reconstructed fragmented file"
+                                            );
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            check_offset += cluster_size;
+                        }
+                    }
+
+                    if !is_frag && val_status == crate::models::ValidationStatus::Valid && !parsed.is_valid_structure {
+                        val_status = crate::models::ValidationStatus::PartiallyValid;
+                    }
+                }
+
                 let (score, grade) = calculate_confidence(&factors);
                 if score < options.min_confidence_score {
+                    tracing::debug!(
+                        offset = candidate.global_offset,
+                        file_type = ?parsed.file_type,
+                        confidence_score = score,
+                        min_required = options.min_confidence_score,
+                        "Candidate discarded: confidence score below threshold"
+                    );
                     continue;
                 }
 
@@ -130,7 +241,7 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
 
                     let target_path = target_dir.join(&suggested_filename);
                     if let Ok(mut out_file) = File::create(&target_path) {
-                        let _ = out_file.write_all(file_slice);
+                        let _ = out_file.write_all(&file_payload);
                         Some(format!("{}/{}", category_folder, suggested_filename))
                     } else {
                         None
@@ -138,6 +249,17 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                 } else {
                     None
                 };
+
+                tracing::info!(
+                    file_id = %file_id,
+                    offset = candidate.global_offset,
+                    file_type = %parsed.file_type,
+                    size_bytes = actual_size,
+                    validation = %val_status,
+                    confidence = score,
+                    fragmented = is_frag,
+                    "Carved forensic artifact successfully"
+                );
 
                 let recovered = RecoveredFile {
                     file_id,
@@ -148,11 +270,11 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                     category: parsed.file_type.category(),
                     mime_type: parsed.file_type.default_mime_type().to_string(),
                     suggested_filename,
-                    recovery_method: RecoveryMethod::StructureCarving,
+                    recovery_method: rec_method,
                     validation_status: val_status,
                     confidence_score: score,
                     confidence_grade: grade,
-                    is_fragmented: false,
+                    is_fragmented: is_frag,
                     sha256_hash,
                     output_relative_path: rel_path,
                     evidence_factors: factors,
@@ -160,6 +282,12 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                 };
 
                 recovered_files.push(recovered);
+            } else {
+                tracing::debug!(
+                    offset = candidate.global_offset,
+                    file_type = ?candidate.file_type,
+                    "Candidate rejected: parser returned None"
+                );
             }
         }
 
@@ -178,7 +306,11 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
             0.0
         };
 
-        let pct = (current_offset as f64 / total_bytes as f64 * 100.0).min(100.0);
+        let pct = if total_bytes > 0 {
+            (current_offset as f64 / total_bytes as f64 * 100.0).min(100.0)
+        } else {
+            0.0
+        };
 
         progress_cb(RecoveryProgress {
             operation_id: operation_id.to_string(),
@@ -189,6 +321,12 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
             elapsed_seconds: elapsed,
             files_found: recovered_files.len(),
             stage: "Carving raw image sectors".to_string(),
+            filesystem_type: None,
+            phase: Some("RECOVERING".to_string()),
+            entries_examined: candidates_evaluated,
+            deleted_candidates: candidates_evaluated,
+            files_validated: recovered_files.len(),
+            current_operation: Some(format!("Carved {} files", recovered_files.len())),
         });
     }
 

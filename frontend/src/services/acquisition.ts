@@ -7,6 +7,7 @@ import {
   AcquisitionArtifact,
   AcquisitionDeviceSnapshot,
   AcquisitionPlan,
+  AcquisitionPrivilegeStatus,
   AcquisitionProgress,
   AcquisitionResult,
   ArtifactVerificationResponse,
@@ -189,7 +190,7 @@ export async function startAcquisition(
 export async function cancelAcquisition(operationId: string): Promise<boolean> {
   if (isTauri()) {
     const { invoke } = await import('@tauri-apps/api/core');
-    return invoke<boolean>('cancel_acquisition', { operationId });
+    return invoke<boolean>('cancel_acquisition', { operationId, operation_id: operationId });
   }
   return true;
 }
@@ -201,6 +202,7 @@ export async function getAcquisitionProgress(
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<AcquisitionProgress | null>('get_acquisition_progress', {
       operationId,
+      operation_id: operationId,
     });
   }
   return null;
@@ -250,3 +252,25 @@ export async function verifyAcquisitionArtifact(
     error_message: null,
   };
 }
+
+export async function checkAcquisitionPrivileges(): Promise<AcquisitionPrivilegeStatus> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<AcquisitionPrivilegeStatus>('check_acquisition_privileges');
+  }
+
+  return {
+    is_elevated: true,
+    platform: 'web',
+    message: 'Browser environment: simulation mode active',
+  };
+}
+
+export async function listAcquisitionRecords(): Promise<import('../types/acquisition').AcquisitionRecord[]> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<import('../types/acquisition').AcquisitionRecord[]>('list_acquisition_records');
+  }
+  return [];
+}
+

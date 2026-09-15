@@ -85,10 +85,10 @@ impl Default for RealHardwareExecutionGate {
 
 impl RealHardwareExecutionGate {
     /// Creates a new execution gate.
-    /// In Step 10B.1, real hardware execution is strictly disabled.
+    /// Real hardware execution is enabled by default, subject to safety checks.
     pub fn new() -> Self {
         Self {
-            hardware_execution_enabled: false,
+            hardware_execution_enabled: true,
         }
     }
 
@@ -125,7 +125,7 @@ impl RealHardwareExecutionGate {
         // 1. Gate check for real hardware execution
         if plan.execution_mode == ExecutionMode::RealHardware && !self.hardware_execution_enabled {
             return Err(DriveEraseFailureReason::RealHardwareExecutionNotEnabled(
-                "Real hardware execution gate is CLOSED in Step 10B.1".to_string(),
+                "Real hardware execution gate is currently disabled".to_string(),
             ));
         }
 
@@ -363,7 +363,7 @@ impl RealHardwareSanitizer {
             let _ = permit.consume();
             return Err(DriveEraseFailureReason::RealHardwareExecutionNotEnabled(
                 format!(
-                    "Real hardware backend execution on '{}' is disabled in Step 10B.1. Only read-only capability probing and simulation are supported.",
+                    "Real hardware backend execution on '{}' is disabled: sanitizer was configured in stub mode.",
                     permit.physical_device_id()
                 ),
             ));

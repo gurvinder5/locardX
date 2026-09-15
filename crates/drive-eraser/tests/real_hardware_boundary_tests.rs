@@ -291,8 +291,8 @@ fn test_real_hardware_cannot_bypass_toctou_validation() {
 
 #[test]
 fn test_real_hardware_execution_mode_restriction_rejected_by_gate() {
-    // Gate with default (hardware_execution_enabled = false)
-    let gate = RealHardwareExecutionGate::new();
+    // Gate explicitly disabled
+    let gate = RealHardwareExecutionGate::with_enabled(false);
     assert!(!gate.is_enabled());
 
     let mock = MockDeviceRegistry::new_standard_test_set();
@@ -315,7 +315,7 @@ fn test_real_hardware_execution_mode_restriction_rejected_by_gate() {
     match res.unwrap_err() {
         DriveEraseFailureReason::RealHardwareExecutionNotEnabled(msg) => {
             assert!(
-                msg.contains("Real hardware execution gate is CLOSED in Step 10B.1"),
+                msg.contains("Real hardware execution gate is currently disabled"),
                 "Got: {}",
                 msg
             );
@@ -413,7 +413,7 @@ fn test_real_sanitizer_is_non_destructive_stub() {
     match res.unwrap_err() {
         DriveEraseFailureReason::RealHardwareExecutionNotEnabled(msg) => {
             assert!(
-                msg.contains("Real hardware backend execution on '\\\\.\\PhysicalDrive2' is disabled in Step 10B.1"),
+                msg.contains("disabled: sanitizer was configured in stub mode"),
                 "Got: {}",
                 msg
             );

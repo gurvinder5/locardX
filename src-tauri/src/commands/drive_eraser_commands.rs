@@ -3,8 +3,8 @@ use locardx_common::SafeErrorResponse;
 use locardx_device_manager::PhysicalDevice;
 use locardx_drive_eraser::{
     detect_device_capabilities, inspect_physical_device, is_elevated_admin, DriveCapabilities,
-    DriveCapabilitiesAssessment, DriveErasePlan, DriveEraseRequest, DriveEraseResult,
-    ExecutionMode,
+    DriveCapabilitiesAssessment, DriveErasePlan, DriveEraseProgress, DriveEraseRequest,
+    DriveEraseResult, ExecutionMode,
 };
 use locardx_reporting::DriveSanitizationReport;
 use serde::{Deserialize, Serialize};
@@ -170,6 +170,13 @@ pub fn get_drive_erasure_result_handler(
         .map_err(|e| SafeErrorResponse::from(&e))
 }
 
+pub fn get_drive_erasure_progress_handler(
+    state: &AppState,
+    operation_id: &str,
+) -> Result<Option<DriveEraseProgress>, SafeErrorResponse> {
+    Ok(state.drive_eraser.get_progress(operation_id))
+}
+
 // ==========================================
 // Tauri Commands
 // ==========================================
@@ -241,6 +248,14 @@ pub fn get_drive_erasure_result(
     operation_id: String,
 ) -> Result<Option<DriveEraseResult>, SafeErrorResponse> {
     get_drive_erasure_result_handler(&state, &operation_id)
+}
+
+#[tauri::command]
+pub fn get_drive_erasure_progress(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<Option<DriveEraseProgress>, SafeErrorResponse> {
+    get_drive_erasure_progress_handler(&state, &operation_id)
 }
 
 pub fn check_drive_eraser_privileges_handler() -> Result<DrivePrivilegeStatus, SafeErrorResponse> {

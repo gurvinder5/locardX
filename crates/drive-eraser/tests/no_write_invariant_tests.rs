@@ -5,7 +5,7 @@ use locardx_device_manager::{
     DeviceClassification, DeviceManagerService, DeviceType, PhysicalDevice,
 };
 use locardx_drive_eraser::{
-    detect_device_capabilities, generate_drive_erase_plan, DriveEraseFailureReason,
+    detect_device_capabilities, generate_drive_erase_plan,
     DriveEraseRequest, DriveEraserService, ExecutionMode, MockDeviceRegistry,
     PhysicalDeviceSnapshot,
 };
@@ -30,8 +30,11 @@ fn setup_test_service() -> (DriveEraserService, MockDeviceRegistry) {
 }
 
 #[tokio::test]
-async fn test_planning_with_real_hardware_mode_is_forbidden() {
+async fn test_planning_with_real_hardware_mode_is_forbidden_when_gate_disabled() {
     let (service, _registry) = setup_test_service();
+    let service = service.with_execution_gate(Arc::new(
+        locardx_drive_eraser::RealHardwareExecutionGate::with_enabled(false),
+    ));
 
     let res = service
         .plan_drive_erasure(
@@ -49,8 +52,8 @@ async fn test_planning_with_real_hardware_mode_is_forbidden() {
     match res.unwrap_err() {
         locardx_common::LocardError::SecurityViolation(msg) => {
             assert!(
-                msg.contains("Real hardware execution is permanently disabled in Step 10A"),
-                "Expected invariant message, got: {}",
+                msg.contains("Real hardware execution is currently disabled"),
+                "Expected disabled message, got: {}",
                 msg
             );
         }
@@ -76,7 +79,7 @@ async fn test_execution_with_real_hardware_mode_is_forbidden() {
         .await
         .unwrap();
 
-    // Attempt to execute with RealHardware mode
+    // Attempt to execute with RealHardware mode via simulation endpoint
     let res = service
         .execute_drive_erasure_simulation(
             &plan.plan_id,
@@ -95,8 +98,8 @@ async fn test_execution_with_real_hardware_mode_is_forbidden() {
     match res.unwrap_err() {
         locardx_common::LocardError::SecurityViolation(msg) => {
             assert!(
-                msg.contains("CRITICAL INVARIANT: Real hardware execution is permanently disabled in Step 10A"),
-                "Expected critical invariant message, got: {}",
+                msg.contains("Real hardware execution is not permitted via the simulation endpoint"),
+                "Expected simulation restriction message, got: {}",
                 msg
             );
         }
@@ -105,7 +108,7 @@ async fn test_execution_with_real_hardware_mode_is_forbidden() {
 }
 
 #[test]
-fn test_planner_direct_rejection_of_real_hardware_mode() {
+fn test_planner_authorizes_real_hardware_mode_for_data_drive() {
     let device = PhysicalDevice {
         device_id: r"\\.\PhysicalDrive1".to_string(),
         display_name: "Test Seagate HDD".to_string(),
@@ -124,16 +127,7 @@ fn test_planner_direct_rejection_of_real_hardware_mode() {
     let caps = detect_device_capabilities(&device);
 
     let res = generate_drive_erase_plan(snapshot, caps, None, ExecutionMode::RealHardware);
-
-    assert!(res.is_err());
-    match res.unwrap_err() {
-        DriveEraseFailureReason::RealHardwareExecutionDisabled(msg) => {
-            assert!(
-                msg.contains("disabled in Step 10A") || msg.contains("Simulation"),
-                "Expected disabled message, got: {}",
-                msg
-            );
-        }
-        other => panic!("Expected RealHardwareExecutionDisabled, got {:?}", other),
-    }
+    assert!(res.is_ok(), "Expected real hardware plan generation to succeed for data drive");
+    let plan = res.unwrap();
+    assert_eq!(plan.execution_mode, ExecutionMode::RealHardware);
 }

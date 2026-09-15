@@ -37,6 +37,7 @@ export const RecoveryResults: React.FC<RecoveryResultsProps> = ({
     { key: 'images', label: 'Images' },
     { key: 'documents', label: 'Documents' },
     { key: 'archives', label: 'Archives' },
+    { key: 'media', label: 'Media (Audio/Video)' },
     { key: 'databases', label: 'Databases' },
     { key: 'text_files', label: 'Text Files' },
   ];
@@ -210,7 +211,17 @@ export const RecoveryResults: React.FC<RecoveryResultsProps> = ({
 
       {/* Recovered File Cards List */}
       <div className="space-y-2">
-        {filteredFiles.length === 0 ? (
+        {result.files_recovered === 0 ? (
+          <div className="p-8 text-center bg-white border border-slate-200 rounded-md space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-slate-400 mx-auto" />
+            <div className="text-xs font-semibold text-slate-700">
+              Filesystem Analysis Completed: Zero Recoverable Files
+            </div>
+            <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+              The evidence source was genuinely scanned ({result.bytes_scanned > 0 ? `${(result.bytes_scanned / (1024 * 1024)).toFixed(1)} MB evaluated` : 'scanned'}). No deleted or orphaned files matching the criteria were found in filesystem metadata structures.
+            </p>
+          </div>
+        ) : filteredFiles.length === 0 ? (
           <div className="p-8 text-center bg-white border border-slate-200 rounded-md text-slate-400 text-xs">
             No recovered files match current filter criteria.
           </div>

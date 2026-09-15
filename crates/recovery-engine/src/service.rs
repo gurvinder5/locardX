@@ -86,20 +86,125 @@ impl RecoveryService {
     }
 
     /// Evaluates pre-flight conditions and generates an immutable RecoveryPlan.
+    /// Performs fast O(1) validation of artifact presence, format, size consistency,
+    /// and options boundaries without executing full-disk hashing or carving.
     pub fn create_plan(
         &self,
         artifact: &AcquisitionArtifact,
         options: RecoveryOptions,
         actor_id: Option<&str>,
     ) -> Result<RecoveryPlan, LocardError> {
-        let snapshot = self.validate_source(artifact, actor_id)?;
+        // 1. Pre-flight verification of forensic artifact status
+        if !artifact.is_verified {
+            return Err(LocardError::Operation(format!(
+                "Forensic artifact {} is not marked as verified",
+                artifact.acquisition_id
+            )));
+        }
+
+        let fmt = artifact.image_format.to_lowercase();
+        if fmt != "raw" && fmt != "dd" {
+            return Err(LocardError::Operation(format!(
+                "Unsupported image format '{}'; only 'raw' or 'dd' are accepted",
+                artifact.image_format
+            )));
+        }
+
+        let img_path = Path::new(&artifact.image_path);
+        if !img_path.exists() {
+            return Err(LocardError::Operation(format!(
+                "Evidence image file not found at path: {}",
+                artifact.image_path
+            )));
+        }
+
+        let metadata = std::fs::metadata(img_path).map_err(|e| {
+            LocardError::Operation(format!(
+                "Failed to read metadata for evidence image {}: {}",
+                artifact.image_path, e
+            ))
+        })?;
+
+        if !metadata.is_file() {
+            return Err(LocardError::Operation(format!(
+                "Evidence image path is not a file: {}",
+                artifact.image_path
+            )));
+        }
+
+        let actual_size = metadata.len();
+        if actual_size != artifact.image_size_bytes {
+            return Err(LocardError::Operation(format!(
+                "Evidence image size mismatch: expected {} bytes, actual file has {} bytes",
+                artifact.image_size_bytes, actual_size
+            )));
+        }
+
+        if actual_size == 0 {
+            return Err(LocardError::Operation(
+                "Evidence image is empty (0 bytes)".to_string(),
+            ));
+        }
+
+        // 2. Pre-flight verification of recovery options
+        if options.min_confidence_score > 100 {
+            return Err(LocardError::Operation(
+                "Minimum confidence score must be between 0 and 100".to_string(),
+            ));
+        }
+
+        if options.chunk_size_bytes == 0 {
+            return Err(LocardError::Operation(
+                "Chunk size must be greater than 0 bytes".to_string(),
+            ));
+        }
+
+        // Destination isolation: Output directory must not be identical to the evidence image
+        if !options.output_directory.trim().is_empty() {
+            if let (Ok(canon_img), Ok(canon_out)) = (
+                img_path.canonicalize(),
+                Path::new(&options.output_directory).canonicalize(),
+            ) {
+                if canon_img == canon_out {
+                    return Err(LocardError::Operation(
+                        "Output directory cannot be identical to the evidence image file".to_string(),
+                    ));
+                }
+            }
+        }
+
+        // 3. Register or ensure source exists in SQLite recovery_sources registry idempotently
+        let source_id = format!("src-acq-{}", artifact.acquisition_id);
+        let _ = self.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO recovery_sources (
+                    source_id, acquisition_id, image_path, image_size_bytes, image_sha256,
+                    original_device_id, original_serial, verified_at, is_trusted
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ON CONFLICT(acquisition_id) DO UPDATE SET
+                    verified_at = excluded.verified_at,
+                    is_trusted = excluded.is_trusted",
+                params![
+                    source_id,
+                    artifact.acquisition_id,
+                    artifact.image_path,
+                    artifact.image_size_bytes as i64,
+                    artifact.image_sha256,
+                    artifact.source_device_snapshot.device_id,
+                    artifact.source_device_snapshot.serial_number,
+                    artifact.acquisition_timestamp,
+                    if artifact.is_verified { 1 } else { 0 },
+                ],
+            )?;
+            Ok(())
+        });
 
         let plan_id = format!("plan-rec-{}", Uuid::new_v4());
         let plan = RecoveryPlan {
             plan_id: plan_id.clone(),
-            acquisition_id: snapshot.acquisition_id.clone(),
-            source_image_path: snapshot.image_path.clone(),
-            source_image_sha256: snapshot.image_sha256.clone(),
+            acquisition_id: artifact.acquisition_id.clone(),
+            source_image_path: artifact.image_path.clone(),
+            source_image_sha256: artifact.image_sha256.clone(),
             options,
             created_at: Utc::now().to_rfc3339(),
         };
@@ -125,8 +230,21 @@ impl RecoveryService {
         plan: &RecoveryPlan,
         actor_id: Option<&str>,
     ) -> Result<RecoveryResult, LocardError> {
+        self.execute_recovery_with_operation_id(plan, actor_id, None)
+    }
+
+    /// Executes recovery with a specified operation ID, recording telemetry, persisting outputs, and generating reports.
+    pub fn execute_recovery_with_operation_id(
+        &self,
+        plan: &RecoveryPlan,
+        actor_id: Option<&str>,
+        custom_operation_id: Option<&str>,
+    ) -> Result<RecoveryResult, LocardError> {
         let job_id = format!("job-rec-{}", Uuid::new_v4());
-        let operation_id = format!("op-rec-{}", Uuid::new_v4());
+        let operation_id = custom_operation_id
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("op-rec-{}", Uuid::new_v4()));
 
         let cancel_flag = Arc::new(AtomicBool::new(false));
         {
@@ -314,10 +432,12 @@ impl RecoveryService {
         };
 
         let details = format!(
-            "Recovery job {} {}: {} files recovered, {} bytes scanned, {:.2}s",
+            "Recovery job {} {}: mode={:?}, {} files recovered, {} candidates evaluated, {} bytes scanned, {:.2}s",
             job_id,
             result.status,
+            plan.options.recovery_mode,
             result.files_recovered,
+            result.candidates_evaluated,
             result.bytes_scanned,
             result.elapsed_seconds
         );
@@ -448,9 +568,26 @@ impl RecoveryService {
                 let file_type = match file_type_str.as_str() {
                     "JPEG" => FileType::Jpeg,
                     "PNG" => FileType::Png,
+                    "GIF" => FileType::Gif,
+                    "BMP" => FileType::Bmp,
+                    "TIFF" => FileType::Tiff,
+                    "WEBP" => FileType::Webp,
                     "PDF" => FileType::Pdf,
-                    "ZIP" => FileType::Zip,
+                    "DOC (CFBF)" => FileType::OfficeDoc,
                     "DOCX (OpenXML)" => FileType::OfficeDocx,
+                    "XLS (CFBF)" => FileType::OfficeXls,
+                    "XLSX (OpenXML)" => FileType::OfficeXlsx,
+                    "PPT (CFBF)" => FileType::OfficePpt,
+                    "PPTX (OpenXML)" => FileType::OfficePptx,
+                    "RTF" => FileType::Rtf,
+                    "ZIP" => FileType::Zip,
+                    "7-Zip" => FileType::SevenZip,
+                    "RAR" => FileType::Rar,
+                    "MP3" => FileType::Mp3,
+                    "WAV" => FileType::Wav,
+                    "MP4" => FileType::Mp4,
+                    "AVI" => FileType::Avi,
+                    "MKV" => FileType::Mkv,
                     "SQLite DB" => FileType::Sqlite,
                     "Text" => FileType::Text,
                     other => FileType::Unknown(other.to_string()),
@@ -624,7 +761,7 @@ impl RecoveryService {
         }
     }
 
-    /// Lists all validated recovery sources stored in the database.
+    /// Lists all validated recovery sources stored in the database, including completed acquisitions.
     pub fn list_sources(&self) -> Result<Vec<RecoverySourceSnapshot>, LocardError> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
@@ -648,8 +785,49 @@ impl RecoveryService {
             })?;
 
             let mut sources = Vec::new();
+            let mut seen_acq_ids = std::collections::HashSet::new();
             for r in rows {
-                sources.push(r?);
+                let s = r?;
+                if seen_acq_ids.insert(s.acquisition_id.clone()) {
+                    sources.push(s);
+                }
+            }
+
+            // Also include completed acquisitions from acquisition_records that aren't yet in recovery_sources
+            if let Ok(mut acq_stmt) = conn.prepare(
+                "SELECT acquisition_id, destination_path, image_size_bytes, image_sha256,
+                        source_device_id, source_serial, completed_at
+                 FROM acquisition_records
+                 WHERE status = 'Completed'
+                 ORDER BY completed_at DESC",
+            ) {
+                if let Ok(acq_rows) = acq_stmt.query_map([], |row| {
+                    let acq_id: String = row.get(0)?;
+                    let dest_path: String = row.get(1)?;
+                    let size_bytes: i64 = row.get(2)?;
+                    let sha256: String = row.get(3)?;
+                    let dev_id: String = row.get(4)?;
+                    let serial: Option<String> = row.get(5)?;
+                    let completed: String = row.get(6)?;
+                    Ok((acq_id, dest_path, size_bytes, sha256, dev_id, serial, completed))
+                }) {
+                    for r in acq_rows.flatten() {
+                        let (acq_id, dest_path, size_bytes, sha256, dev_id, serial, completed) = r;
+                        if !seen_acq_ids.contains(&acq_id) {
+                            sources.push(RecoverySourceSnapshot {
+                                source_id: format!("src-acq-{}", &acq_id),
+                                acquisition_id: acq_id,
+                                image_path: dest_path,
+                                image_size_bytes: size_bytes.max(0) as u64,
+                                image_sha256: sha256,
+                                original_device_id: dev_id,
+                                original_serial: serial,
+                                verified_at: completed,
+                                is_trusted: true,
+                            });
+                        }
+                    }
+                }
             }
 
             Ok(sources)
@@ -701,5 +879,133 @@ impl RecoveryService {
         }
 
         Ok(count)
+    }
+
+    /// Securely materializes a recovered file into a verified recovery workspace.
+    /// The evidence image is read strictly read-only and the recovered byte hash is verified.
+    pub fn materialize_recovered_file(
+        &self,
+        job_id: &str,
+        file_id: &str,
+        custom_workspace_dir: Option<&Path>,
+    ) -> Result<std::path::PathBuf, LocardError> {
+        let job = self
+            .get_job(job_id)?
+            .ok_or_else(|| LocardError::Operation(format!("Recovery job {} not found", job_id)))?;
+
+        let rec_file = job
+            .recovered_files
+            .iter()
+            .find(|f| f.file_id == file_id)
+            .ok_or_else(|| LocardError::Operation(format!("Recovered file {} not found in job", file_id)))?;
+
+        // Determine workspace base path
+        let workspace_base = match custom_workspace_dir {
+            Some(p) => p.to_path_buf(),
+            None => std::env::temp_dir().join("locardx_recovery_workspace").join(job_id),
+        };
+
+        std::fs::create_dir_all(&workspace_base).map_err(|e| {
+            LocardError::Operation(format!("Failed to create recovery workspace directory: {}", e))
+        })?;
+
+        let workspace_canonical = workspace_base.canonicalize().map_err(|e| {
+            LocardError::Operation(format!("Failed to canonicalize workspace directory: {}", e))
+        })?;
+
+        let cat_folder = rec_file.category.to_string().to_lowercase();
+        let target_dir = workspace_canonical.join(&cat_folder);
+        std::fs::create_dir_all(&target_dir).map_err(|e| {
+            LocardError::Operation(format!("Failed to create category folder in workspace: {}", e))
+        })?;
+
+        // Sanitize suggested filename to prevent path traversal
+        let safe_name = crate::engine::sanitize_filename(&rec_file.suggested_filename);
+        let target_path = target_dir.join(&safe_name);
+
+        // Security check: verify that target path stays within workspace_canonical
+        if !target_path.starts_with(&workspace_canonical) {
+            return Err(LocardError::SecurityViolation(
+                "Path traversal detected: target path is outside recovery workspace".to_string(),
+            ));
+        }
+
+        // If file exists, verify SHA-256 integrity
+        if target_path.exists() {
+            if let Ok(bytes) = std::fs::read(&target_path) {
+                let computed = format!("{:x}", sha2::Sha256::digest(&bytes));
+                if computed.eq_ignore_ascii_case(&rec_file.sha256_hash) {
+                    return Ok(target_path);
+                }
+            }
+        }
+
+        // Read strictly read-only from evidence image
+        let img_path = Path::new(&job.source_image_path);
+        let mut img_file = std::fs::File::open(img_path)
+            .map_err(|e| LocardError::Device(format!("Failed to open evidence image: {}", e)))?;
+
+        use std::io::{Read, Seek, SeekFrom, Write};
+        img_file
+            .seek(SeekFrom::Start(rec_file.source_offset))
+            .map_err(|e| LocardError::Device(format!("Failed to seek image offset: {}", e)))?;
+
+        let mut buf = vec![0u8; rec_file.size_bytes as usize];
+        img_file
+            .read_exact(&mut buf)
+            .map_err(|e| LocardError::Device(format!("Failed to read file bytes: {}", e)))?;
+
+        // Cryptographic verification before writing
+        let computed = format!("{:x}", sha2::Sha256::digest(&buf));
+        if !computed.eq_ignore_ascii_case(&rec_file.sha256_hash) {
+            return Err(LocardError::Operation(format!(
+                "Recovered artifact hash verification failed: expected {}, got {}",
+                rec_file.sha256_hash, computed
+            )));
+        }
+
+        let mut out = std::fs::File::create(&target_path).map_err(|e| {
+            LocardError::Operation(format!("Failed to write recovered artifact to workspace: {}", e))
+        })?;
+        out.write_all(&buf).map_err(|e| {
+            LocardError::Operation(format!("Failed to write recovered bytes: {}", e))
+        })?;
+
+        Ok(target_path)
+    }
+
+    /// Safely opens a recovered artifact with the OS default application.
+    pub fn open_recovered_file(&self, job_id: &str, file_id: &str) -> Result<String, LocardError> {
+        let path = self.materialize_recovered_file(job_id, file_id, None)?;
+
+        // Safety check: reject direct execution of raw executable binaries
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            let ext_lower = ext.to_lowercase();
+            if matches!(
+                ext_lower.as_str(),
+                "exe" | "bat" | "cmd" | "ps1" | "vbs" | "js" | "scr" | "com" | "pif"
+            ) {
+                return Err(LocardError::SecurityViolation(
+                    "Direct execution of executable files is restricted for forensic safety. Use Export instead.".to_string(),
+                ));
+            }
+        }
+
+        opener::open(&path).map_err(|e| {
+            LocardError::Operation(format!("Operating system failed to open file with default application: {}", e))
+        })?;
+
+        Ok(path.to_string_lossy().to_string())
+    }
+
+    /// Safely reveals a recovered artifact in the OS file manager.
+    pub fn reveal_recovered_file(&self, job_id: &str, file_id: &str) -> Result<String, LocardError> {
+        let path = self.materialize_recovered_file(job_id, file_id, None)?;
+
+        opener::reveal(&path).map_err(|e| {
+            LocardError::Operation(format!("Operating system failed to reveal file in file manager: {}", e))
+        })?;
+
+        Ok(path.to_string_lossy().to_string())
     }
 }

@@ -156,11 +156,25 @@ pub fn validate_file_target(
 pub fn validate_folder_target(
     raw_path: &str,
 ) -> Result<FileMetadataSnapshot, FileEraseFailureReason> {
-    let raw_trimmed = raw_path.trim();
+    let mut raw_trimmed = raw_path.trim();
     if raw_trimmed.is_empty() {
         return Err(FileEraseFailureReason::TargetNotFound(
             "Empty path specified".to_string(),
         ));
+    }
+
+    // Strip trailing slashes/backslashes unless it's a volume root like C:\ or /
+    if raw_trimmed.len() > 3 && (raw_trimmed.ends_with('\\') || raw_trimmed.ends_with('/')) {
+        raw_trimmed = raw_trimmed.trim_end_matches(['\\', '/']);
+    }
+
+    // Hard block filesystem root
+    let upper = raw_trimmed.to_uppercase();
+    if upper == "/" || upper == "C:" || upper == "C:\\" || (upper.len() <= 3 && upper.ends_with(':')) {
+        return Err(FileEraseFailureReason::SystemOrBootPath(format!(
+            "Target '{}' is a filesystem root directory; erasure is prohibited",
+            raw_trimmed
+        )));
     }
 
     let path = Path::new(raw_trimmed);
@@ -187,6 +201,21 @@ pub fn validate_folder_target(
             "Target directory '{}' is a system or boot critical location",
             canonical_str
         )));
+    }
+
+    // Check currently running executable directory protection
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            if let Ok(exe_canon) = exe_dir.canonicalize() {
+                if let Ok(target_canon) = path.canonicalize() {
+                    if target_canon == exe_canon || exe_canon.starts_with(&target_canon) {
+                        return Err(FileEraseFailureReason::SecurityViolation(
+                            "Target directory contains or is the running LocardX application directory".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     let meta = std::fs::metadata(&canonical).map_err(|e| match e.kind() {

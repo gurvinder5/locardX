@@ -37,7 +37,21 @@ pub fn evaluate_candidate(
         // 2. Footer Match Factor
         if let Some(footer) = &sig.footer_magic {
             let footer_len = footer.len();
-            if data.len() >= footer_len && &data[data.len() - footer_len..] == footer.as_slice() {
+            let mut trimmed_len = data.len();
+            while trimmed_len > 0
+                && (data[trimmed_len - 1] == b'\r'
+                    || data[trimmed_len - 1] == b'\n'
+                    || data[trimmed_len - 1] == b' '
+                    || data[trimmed_len - 1] == 0)
+            {
+                trimmed_len -= 1;
+            }
+            let footer_matched = (data.len() >= footer_len
+                && &data[data.len() - footer_len..] == footer.as_slice())
+                || (trimmed_len >= footer_len
+                    && &data[trimmed_len - footer_len..trimmed_len] == footer.as_slice());
+
+            if footer_matched {
                 factors.push(EvidenceFactor {
                     factor_type: "FOOTER_MATCH".to_string(),
                     weight: 20,

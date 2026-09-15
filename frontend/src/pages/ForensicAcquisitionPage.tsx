@@ -14,17 +14,23 @@ import {
   RefreshCw,
   StopCircle,
   Info,
+  AlertTriangle,
+  Briefcase,
 } from 'lucide-react';
 import {
   AcquisitionArtifact,
   AcquisitionDeviceSnapshot,
   AcquisitionPlan,
+  AcquisitionPrivilegeStatus,
   AcquisitionProgress,
+  AcquisitionRecord,
   AcquisitionResult,
   ArtifactVerificationResponse,
+  formatAcquisitionError,
 } from '../types/acquisition';
 import {
   listAcquisitionSources,
+  listAcquisitionRecords,
   validateAcquisitionDestination,
   createAcquisitionPlan,
   startAcquisition,
@@ -32,11 +38,19 @@ import {
   getAcquisitionProgress,
   getAcquisitionArtifact,
   verifyAcquisitionArtifact,
+  checkAcquisitionPrivileges,
 } from '../services/acquisition';
 import { useAuthStore } from '../stores/authStore';
+import { useCaseStore } from '../stores/caseStore';
+import { ActiveCaseRequiredModal } from '../components/case/ActiveCaseRequiredModal';
 
 export const ForensicAcquisitionPage: React.FC = () => {
   const { sessionToken } = useAuthStore();
+  const { activeCase } = useCaseStore();
+
+  const [showCaseModal, setShowCaseModal] = useState(false);
+  const [historyRecords, setHistoryRecords] = useState<AcquisitionRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // State: Sources
   const [sources, setSources] = useState<AcquisitionDeviceSnapshot[]>([]);
@@ -63,15 +77,27 @@ export const ForensicAcquisitionPage: React.FC = () => {
   const [verification, setVerification] = useState<ArtifactVerificationResponse | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [copiedHash, setCopiedHash] = useState<boolean>(false);
+  const [privilegeStatus, setPrivilegeStatus] = useState<AcquisitionPrivilegeStatus | null>(null);
 
   const pollIntervalRef = useRef<number | null>(null);
 
   const selectedSource = sources.find((s) => s.device_id === selectedSourceId);
 
+  // Check elevation privileges
+  const checkPrivileges = async () => {
+    try {
+      const status = await checkAcquisitionPrivileges();
+      setPrivilegeStatus(status);
+    } catch (err) {
+      console.error('Failed to check acquisition privileges:', err);
+    }
+  };
+
   // Load available sources on mount
   const loadSources = async () => {
     try {
       setLoadingSources(true);
+      checkPrivileges();
       const devs = await listAcquisitionSources();
       setSources(devs);
       if (devs.length > 0 && !selectedSourceId) {
@@ -86,9 +112,32 @@ export const ForensicAcquisitionPage: React.FC = () => {
     }
   };
 
+  const loadHistoryRecords = async () => {
+    try {
+      setLoadingHistory(true);
+      const records = await listAcquisitionRecords();
+      setHistoryRecords(records);
+    } catch (err) {
+      console.error('Failed to load acquisition history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   useEffect(() => {
     loadSources();
+    checkPrivileges();
+    loadHistoryRecords();
   }, []);
+
+  // Reset plan when selected source changes
+  useEffect(() => {
+    setPlan(null);
+    setResult(null);
+    setArtifact(null);
+    setVerification(null);
+    setPlanningError(null);
+  }, [selectedSourceId]);
 
   // Destination validation debounce
   useEffect(() => {
@@ -138,8 +187,14 @@ export const ForensicAcquisitionPage: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const isCaseActive = activeCase && (activeCase.status === 'open' || activeCase.status === 'in_progress');
+
   // Generate Plan Handler
   const handleGeneratePlan = async () => {
+    if (!isCaseActive) {
+      setShowCaseModal(true);
+      return;
+    }
     if (!selectedSource) return;
     try {
       setPlanningError(null);
@@ -161,11 +216,16 @@ export const ForensicAcquisitionPage: React.FC = () => {
 
   // Start Acquisition Handler
   const handleStartAcquisition = async () => {
+    if (!isCaseActive) {
+      setShowCaseModal(true);
+      return;
+    }
     if (!plan) return;
     setIsAcquiring(true);
     setExecutionError(null);
+    const opId = 'op-acq-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
     setProgress({
-      operation_id: 'pending',
+      operation_id: opId,
       bytes_acquired: 0,
       total_bytes: plan.source.capacity_bytes,
       percentage: 0,
@@ -175,12 +235,10 @@ export const ForensicAcquisitionPage: React.FC = () => {
       stage: 'Initializing read-only physical device stream...',
     });
 
-    // Start polling progress
-    let activeOpId: string | null = null;
+    // Start polling progress immediately using the generated operation_id
     pollIntervalRef.current = window.setInterval(async () => {
-      if (!activeOpId) return;
       try {
-        const prog = await getAcquisitionProgress(activeOpId);
+        const prog = await getAcquisitionProgress(opId);
         if (prog) {
           setProgress(prog);
         }
@@ -193,19 +251,19 @@ export const ForensicAcquisitionPage: React.FC = () => {
       const res = await startAcquisition({
         plan,
         session_token: sessionToken,
+        operation_id: opId,
       });
-      activeOpId = res.operation_id;
       setResult(res);
 
       if (res.status === 'Completed') {
         const art = await getAcquisitionArtifact(res.operation_id);
         setArtifact(art);
+        loadHistoryRecords();
       } else if (res.status === 'Cancelled') {
-        setExecutionError('Forensic acquisition was cancelled by operator. Target image cleaned up.');
+        setExecutionError('Forensic acquisition was cancelled by operator.');
       } else {
-        setExecutionError(
-          res.failure_reason?.message || 'Forensic acquisition failed. Image discarded.'
-        );
+        const formattedErr = formatAcquisitionError(res.failure_reason);
+        setExecutionError(formattedErr);
       }
     } catch (err: unknown) {
       setExecutionError(err instanceof Error ? err.message : 'Acquisition operation failed');
@@ -215,12 +273,13 @@ export const ForensicAcquisitionPage: React.FC = () => {
         pollIntervalRef.current = null;
       }
       setIsAcquiring(false);
+      loadHistoryRecords();
     }
   };
 
   // Cancel Handler
   const handleCancelAcquisition = async () => {
-    if (progress?.operation_id) {
+    if (progress?.operation_id && progress.operation_id !== 'pending') {
       await cancelAcquisition(progress.operation_id);
     }
   };
@@ -245,6 +304,31 @@ export const ForensicAcquisitionPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Active Case Warning Banner if not active */}
+      {!isCaseActive && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                Active Investigation Case Required
+              </h4>
+              <p className="text-xs text-amber-800">
+                Forensic disk acquisitions must be cryptographically associated with an open case to maintain chain of custody.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowCaseModal(true)}
+            className="px-3.5 py-2 text-xs font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 border border-amber-300 rounded-lg shadow-xs transition-colors shrink-0"
+          >
+            Select or Create Case
+          </button>
+        </div>
+      )}
+
       {/* Header with Strict Read-Only Guarantee */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -293,6 +377,23 @@ export const ForensicAcquisitionPage: React.FC = () => {
           </ul>
         </div>
       </div>
+
+      {/* Elevation Requirement Notice */}
+      {privilegeStatus && !privilegeStatus.is_elevated && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-amber-800">
+              ADMINISTRATIVE PRIVILEGES REQUIRED (Non-Elevated Session Detected)
+            </p>
+            <p className="text-amber-700">
+              Direct raw sector reading from physical storage devices (<code className="font-mono bg-amber-100 px-1 rounded">\\.\PhysicalDrive1</code>) requires elevated Windows Administrator privileges.
+              Reading raw physical devices without elevation fails closed with an Access Denied error (Win32 error 5).
+              To acquire physical storage devices, please restart LocardX using <strong>Run as administrator</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Source & Destination Setup */}
@@ -387,7 +488,7 @@ export const ForensicAcquisitionPage: React.FC = () => {
               {/* Destination Validation Feedback */}
               {destinationPath && (
                 <div
-                  className={`p-2.5 rounded text-xs flex items-center gap-2 border ${
+                  className={`p-2.5 rounded text-xs flex items-center justify-between gap-2 border ${
                     validatingDest
                       ? 'bg-slate-50 text-slate-600 border-slate-200'
                       : destValid
@@ -395,18 +496,33 @@ export const ForensicAcquisitionPage: React.FC = () => {
                       : 'bg-rose-50 text-rose-800 border-rose-200'
                   }`}
                 >
-                  {validatingDest ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : destValid ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <div className="flex items-center gap-2">
+                    {validatingDest ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                    ) : destValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    )}
+                    <span className="font-medium">
+                      {validatingDest
+                        ? 'Validating target path and free disk space...'
+                        : destValidationMessage || 'Invalid destination'}
+                    </span>
+                  </div>
+
+                  {!validatingDest && !destValid && (destValidationMessage?.toLowerCase().includes('directory') || destValidationMessage?.toLowerCase().includes('separator')) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const clean = destinationPath.trim().replace(/[\\/]+$/, '');
+                        setDestinationPath(`${clean}\\evidence.raw`);
+                      }}
+                      className="px-2 py-1 text-[11px] font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded shadow-xs shrink-0 whitespace-nowrap cursor-pointer transition-colors"
+                    >
+                      + Append \evidence.raw
+                    </button>
                   )}
-                  <span className="font-medium">
-                    {validatingDest
-                      ? 'Validating target path and free disk space...'
-                      : destValidationMessage || 'Invalid destination'}
-                  </span>
                 </div>
               )}
 
@@ -604,10 +720,60 @@ export const ForensicAcquisitionPage: React.FC = () => {
                 <XCircle className="w-4 h-4 text-rose-600" />
                 <span>Acquisition Interrupted / Failed</span>
               </div>
-              <p>{executionError}</p>
-              <p className="text-[11px] text-rose-700">
-                Integrity invariant preserved: The incomplete target file was immediately removed to prevent partial evidence contamination.
-              </p>
+              <p className="font-semibold text-rose-950">{executionError}</p>
+
+              {result?.diagnostics && (
+                <div className="mt-2 p-3 bg-white/80 border border-rose-200 rounded text-[11px] font-mono space-y-1 text-slate-700">
+                  <div className="font-bold text-[10px] text-rose-800 uppercase tracking-wider mb-1">
+                    Structured Diagnostic Telemetry
+                  </div>
+                  <div>Source: <span className="font-semibold text-slate-900">{result.diagnostics.source_device_id}</span> ({formatBytes(result.diagnostics.source_size_bytes)})</div>
+                  <div>Offset: <span className="font-semibold text-slate-900">{result.diagnostics.current_byte_offset.toLocaleString()} bytes</span></div>
+                  <div>Stage: <span className="text-slate-800">{result.diagnostics.current_stage}</span></div>
+                  {result.diagnostics.win32_error_code !== undefined && result.diagnostics.win32_error_code !== null && (
+                    <div className="text-rose-700 font-bold">Win32 Error Code: {result.diagnostics.win32_error_code}</div>
+                  )}
+                  <div>Status: <span className="uppercase text-rose-700 font-bold">{result.diagnostics.final_status}</span></div>
+                </div>
+              )}
+
+              {result?.cleanup_status === 'CLEANUP_CONFIRMED' && (
+                <div className="p-2.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Filesystem Verified: Incomplete target artifact was cleanly removed to prevent evidence contamination.</span>
+                </div>
+              )}
+              {result?.cleanup_status === 'CLEANUP_FAILED' && (
+                <div className="p-2.5 rounded bg-amber-50 border border-amber-300 text-amber-900 text-[11px] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Warning: Incomplete Target Artifact Could Not Be Cleaned Up</span>
+                  </div>
+                  {result.leftover_artifact_path && (
+                    <div className="font-mono text-[10px] break-all">
+                      Artifact Path: {result.leftover_artifact_path}
+                    </div>
+                  )}
+                  {result.cleanup_error && (
+                    <div className="text-[10px] text-amber-800">
+                      Error: {result.cleanup_error}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-amber-700">
+                    Operator action required: Please inspect and manually delete this partial file before re-attempting acquisition.
+                  </p>
+                </div>
+              )}
+              {result?.cleanup_status === 'CLEANUP_NOT_REQUIRED' && (
+                <p className="text-[11px] text-slate-500 pt-1">
+                  Validation failed before any disk stream was opened; no artifacts were created on disk.
+                </p>
+              )}
+              {!result?.cleanup_status && (
+                <p className="text-[11px] text-rose-700 pt-1">
+                  Integrity invariant: Acquisition stream aborted.
+                </p>
+              )}
             </div>
           )}
 
@@ -707,6 +873,104 @@ export const ForensicAcquisitionPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Evidential Acquisition History */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-2xs overflow-hidden">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/60">
+          <div className="flex items-center gap-2">
+            <Download className="w-4 h-4 text-blue-600" />
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Forensic Acquisition Ledger ({historyRecords.length})
+            </h3>
+          </div>
+          <button
+            onClick={loadHistoryRecords}
+            disabled={loadingHistory}
+            className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+
+        {loadingHistory ? (
+          <div className="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />
+            Loading acquisition ledger...
+          </div>
+        ) : historyRecords.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs">
+            No past acquisition records found in local forensic database.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
+                  <th className="py-2.5 px-4">Date / Time</th>
+                  <th className="py-2.5 px-4">Case Reference</th>
+                  <th className="py-2.5 px-4">Source Device</th>
+                  <th className="py-2.5 px-4">Destination Image</th>
+                  <th className="py-2.5 px-4">Size</th>
+                  <th className="py-2.5 px-4">SHA-256 Digest</th>
+                  <th className="py-2.5 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                {historyRecords.map((rec) => (
+                  <tr key={rec.acquisition_id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">
+                      {new Date(rec.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 px-4 font-semibold text-sky-800 whitespace-nowrap">
+                      {rec.case_id ? (
+                        <span className="px-2 py-0.5 rounded bg-sky-50 text-sky-800 border border-sky-200 text-[10px]">
+                          {rec.case_id}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-normal italic">Unassigned</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-800 font-sans max-w-[180px] truncate" title={rec.source_display_name}>
+                      <span className="font-mono font-semibold text-[11px]">{rec.source_device_id}</span>
+                      <br />
+                      <span className="text-[10px] text-slate-500 truncate block">{rec.source_display_name}</span>
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-700 max-w-[200px] truncate" title={rec.destination_path}>
+                      {rec.destination_path}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-800 whitespace-nowrap">
+                      {formatBytes(rec.image_size_bytes)}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-600 max-w-[150px]">
+                      <span className="font-mono text-[10px] truncate block" title={rec.image_sha256}>
+                        {rec.image_sha256 ? `${rec.image_sha256.substring(0, 16)}...` : 'Pending'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                        rec.status.toLowerCase() === 'completed'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : rec.status.toLowerCase() === 'failed'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}>
+                        {rec.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <ActiveCaseRequiredModal
+        isOpen={showCaseModal}
+        onClose={() => setShowCaseModal(false)}
+        operationName="Forensic Disk Acquisition"
+      />
     </div>
   );
 };

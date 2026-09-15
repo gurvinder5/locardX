@@ -46,6 +46,7 @@ fn create_sample_result(mode: ExecutionMode, status: DriveEraseStatus) -> DriveE
         ],
         started_at: "2026-09-12T04:59:55Z".to_string(),
         completed_at: "2026-09-12T05:00:00Z".to_string(),
+        identity_discrepancies: Vec::new(),
         limitations: vec!["Wear-leveling reserve blocks sanitized via firmware".to_string()],
     }
 }

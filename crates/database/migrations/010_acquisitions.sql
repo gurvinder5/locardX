@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS acquisition_records (
     elapsed_seconds       REAL NOT NULL,
     failure_reason        TEXT,
     audit_reference       TEXT NOT NULL,
+    case_id               TEXT,
     started_at            TEXT NOT NULL,
     completed_at          TEXT NOT NULL
 );
@@ -31,4 +32,5 @@ CREATE TABLE IF NOT EXISTS acquisition_records (
 CREATE INDEX IF NOT EXISTS idx_acq_records_op_id ON acquisition_records(operation_id);
 CREATE INDEX IF NOT EXISTS idx_acq_records_source ON acquisition_records(source_device_id);
 CREATE INDEX IF NOT EXISTS idx_acq_records_status ON acquisition_records(status);
+CREATE INDEX IF NOT EXISTS idx_acq_records_case ON acquisition_records(case_id);
 CREATE INDEX IF NOT EXISTS idx_acq_records_completed ON acquisition_records(completed_at);

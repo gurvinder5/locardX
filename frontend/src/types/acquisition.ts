@@ -48,11 +48,52 @@ export type AcquisitionStatus =
   | 'Failed'
   | 'Cancelled';
 
-export interface AcquisitionFailureReason {
-  type?: string;
-  message?: string;
-  [key: string]: unknown;
+export interface AcquisitionDiagnostics {
+  source_device_id: string;
+  source_size_bytes: number;
+  destination_path: string;
+  current_byte_offset: number;
+  requested_read_size: number;
+  bytes_actually_read: number;
+  current_stage: string;
+  underlying_error?: string | null;
+  win32_error_code?: number | null;
+  final_status: string;
 }
+
+export interface AcquisitionPrivilegeStatus {
+  is_elevated: boolean;
+  platform: string;
+  message: string;
+}
+
+export interface AcquisitionFailureReason {
+  reason: string;
+  details?: any;
+}
+
+export function formatAcquisitionError(reason: AcquisitionFailureReason | null | undefined): string {
+  if (!reason) return 'Forensic acquisition failed.';
+  if (reason.reason === 'PermissionDenied') {
+    const details = typeof reason.details === 'object' ? (reason.details as any) : null;
+    const errCode = details?.win32_error ?? 5;
+    return `Access Denied (Win32 error ${errCode}): Administrator elevation required to acquire physical storage devices. Please relaunch LocardX as Administrator.`;
+  }
+  if (typeof reason.details === 'string') {
+    return reason.details;
+  }
+  if (reason.details && typeof reason.details === 'object') {
+    const d = reason.details as any;
+    if (d.message) return d.message;
+    return JSON.stringify(d);
+  }
+  return reason.reason || 'Forensic acquisition failed.';
+}
+
+export type ArtifactCleanupStatus =
+  | 'CLEANUP_CONFIRMED'
+  | 'CLEANUP_FAILED'
+  | 'CLEANUP_NOT_REQUIRED';
 
 export interface AcquisitionResult {
   acquisition_id: string;
@@ -67,6 +108,10 @@ export interface AcquisitionResult {
   elapsed_seconds: number;
   average_throughput_mbps: number;
   failure_reason?: AcquisitionFailureReason | null;
+  diagnostics?: AcquisitionDiagnostics | null;
+  cleanup_status?: ArtifactCleanupStatus | null;
+  cleanup_error?: string | null;
+  leftover_artifact_path?: string | null;
   audit_reference: string;
   started_at: string;
   completed_at: string;
@@ -95,6 +140,7 @@ export interface CreateAcquisitionPlanRequest {
 export interface StartAcquisitionRequest {
   plan: AcquisitionPlan;
   session_token?: string | null;
+  operation_id?: string | null;
 }
 
 export interface ValidateSourceResponse {
@@ -124,3 +170,19 @@ export interface ArtifactVerificationResponse {
   actual_size: number;
   error_message?: string | null;
 }
+
+export interface AcquisitionRecord {
+  acquisition_id: string;
+  operation_id: string;
+  case_id?: string | null;
+  source_device_id: string;
+  source_display_name: string;
+  destination_path: string;
+  image_format: string;
+  image_size_bytes: number;
+  image_sha256: string;
+  status: string;
+  created_at: string;
+  completed_at?: string | null;
+}
+

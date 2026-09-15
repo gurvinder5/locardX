@@ -68,11 +68,16 @@ fn scan_gpt<R: Read + Seek>(
     let num_entries = u32::from_le_bytes(header[80..84].try_into().unwrap()) as usize;
     let entry_size = u32::from_le_bytes(header[84..88].try_into().unwrap()) as usize;
 
-    if entry_size < 128 || num_entries == 0 || num_entries > 256 {
+    if entry_size < 128 || entry_size > 4096 || num_entries == 0 || num_entries > 256 {
         return Ok(Vec::new());
     }
 
-    reader.seek(SeekFrom::Start(partition_entry_lba * SECTOR_SIZE))?;
+    let entry_lba_bytes = match partition_entry_lba.checked_mul(SECTOR_SIZE) {
+        Some(b) if b < total_bytes => b,
+        _ => return Ok(Vec::new()),
+    };
+
+    reader.seek(SeekFrom::Start(entry_lba_bytes))?;
     let mut partitions = Vec::new();
     let mut entry_buf = vec![0u8; entry_size];
 
@@ -91,8 +96,14 @@ fn scan_gpt<R: Read + Seek>(
 
         if end_lba >= start_lba {
             let sector_count = end_lba - start_lba + 1;
-            let start_byte_offset = start_lba * SECTOR_SIZE;
-            let size_bytes = sector_count * SECTOR_SIZE;
+            let start_byte_offset = match start_lba.checked_mul(SECTOR_SIZE) {
+                Some(off) if off < total_bytes => off,
+                _ => continue,
+            };
+            let size_bytes = sector_count
+                .checked_mul(SECTOR_SIZE)
+                .unwrap_or(total_bytes - start_byte_offset)
+                .min(total_bytes - start_byte_offset);
 
             // Name in UTF-16LE
             let mut name_u16 = Vec::new();
@@ -160,28 +171,34 @@ fn scan_mbr<R: Read + Seek>(
         let sector_count =
             u32::from_le_bytes(sector[offset + 12..offset + 16].try_into().unwrap()) as u64;
 
-        if sector_count > 0 && start_lba * SECTOR_SIZE < total_bytes {
-            let start_byte_offset = start_lba * SECTOR_SIZE;
-            let size_bytes = sector_count * SECTOR_SIZE;
-            let type_str = match ptype {
-                0x07 => "NTFS/exFAT",
-                0x0B | 0x0C => "FAT32",
-                0x83 => "Linux ext4",
-                _other => "MBR Type",
-            };
+        if sector_count > 0 {
+            if let Some(start_byte_offset) = start_lba.checked_mul(SECTOR_SIZE) {
+                if start_byte_offset < total_bytes {
+                    let size_bytes = sector_count
+                        .checked_mul(SECTOR_SIZE)
+                        .unwrap_or(total_bytes - start_byte_offset)
+                        .min(total_bytes - start_byte_offset);
+                    let type_str = match ptype {
+                        0x07 => "NTFS/exFAT",
+                        0x0B | 0x0C => "FAT32",
+                        0x83 => "Linux ext4",
+                        _other => "MBR Type",
+                    };
 
-            let hint = detect_vbr_filesystem_hint(reader, start_byte_offset);
+                    let hint = detect_vbr_filesystem_hint(reader, start_byte_offset);
 
-            partitions.push(PartitionInfo {
-                index: i + 1,
-                partition_type: format!("{} (0x{:02X})", type_str, ptype),
-                start_lba,
-                end_lba: start_lba + sector_count - 1,
-                sector_count,
-                start_byte_offset,
-                size_bytes,
-                filesystem_hint: hint,
-            });
+                    partitions.push(PartitionInfo {
+                        index: i + 1,
+                        partition_type: format!("{} (0x{:02X})", type_str, ptype),
+                        start_lba,
+                        end_lba: start_lba.saturating_add(sector_count).saturating_sub(1),
+                        sector_count,
+                        start_byte_offset,
+                        size_bytes,
+                        filesystem_hint: hint,
+                    });
+                }
+            }
         }
     }
 

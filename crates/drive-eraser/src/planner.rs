@@ -14,11 +14,8 @@ pub fn generate_drive_erase_plan(
     requested_method: Option<&str>,
     execution_mode: ExecutionMode,
 ) -> Result<DriveErasePlan, DriveEraseFailureReason> {
-    // Invariant: Real hardware execution is strictly forbidden in Step 10A
     if execution_mode == ExecutionMode::RealHardware {
-        return Err(DriveEraseFailureReason::RealHardwareExecutionDisabled(
-            "CRITICAL INVARIANT: Real hardware execution is permanently disabled in Step 10A; only Simulation is permitted.".to_string(),
-        ));
+        return generate_real_hardware_drive_erase_plan(snapshot, capabilities, requested_method);
     }
 
     // 1. Unknown media rejection

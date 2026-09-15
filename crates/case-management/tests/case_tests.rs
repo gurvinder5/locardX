@@ -550,3 +550,57 @@ fn test_23_to_30_cross_module_integration_and_invariants() {
         "Non-existent case ID must fail closed with error"
     );
 }
+
+#[test]
+fn test_active_case_enforcement() {
+    let (service, actor) = setup_test_context();
+
+    // 1. When no active case is set, require_active_case fails closed with ACTIVE_CASE_REQUIRED
+    let err = service.require_active_case().unwrap_err();
+    match err {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("ACTIVE_CASE_REQUIRED"), "Expected ACTIVE_CASE_REQUIRED error, got: {}", msg);
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 2. Create an open case and set it as active
+    let req = CreateCaseRequest {
+        case_reference: "CASE-2026-ACT1".to_string(),
+        title: "Active Case Test".to_string(),
+        description: "Testing active case enforcement".to_string(),
+        metadata_json: None,
+    };
+    let case1 = service.create_case(req, &actor).expect("Create case");
+    let active = service.set_active_case(&case1.case_id).expect("Set active case");
+    assert_eq!(active.case_id, case1.case_id);
+
+    // 3. Now require_active_case succeeds and returns case1
+    let req_case = service.require_active_case().expect("Require active case must succeed");
+    assert_eq!(req_case.case_id, case1.case_id);
+
+    // 4. Close the case -> require_active_case must fail closed with CASE_CLOSED
+    service.update_case_status(&case1.case_id, CaseStatus::Completed, &actor).expect("Complete case");
+    let err_closed = service.require_active_case().unwrap_err();
+    match err_closed {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("CASE_CLOSED"), "Expected CASE_CLOSED error, got: {}", msg);
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 5. Clear active case -> require_active_case returns ACTIVE_CASE_REQUIRED
+    service.clear_active_case();
+    assert!(service.get_active_case().unwrap().is_none());
+    let err_cleared = service.require_active_case().unwrap_err();
+    match err_cleared {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("ACTIVE_CASE_REQUIRED"));
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 6. Setting non-existent case fails
+    assert!(service.set_active_case("non-existent-case").is_err());
+}
+

@@ -23,6 +23,7 @@ export type FileCategory =
   | 'archives'
   | 'databases'
   | 'text_files'
+  | 'media'
   | 'unknown';
 
 export type RecoveryMethod =
@@ -96,7 +97,25 @@ export interface RecoveryProgress {
   elapsed_seconds: number;
   files_found: number;
   stage: string;
+  filesystem_type?: string | null;
+  phase?: string | null;
+  entries_examined?: number;
+  deleted_candidates?: number;
+  files_validated?: number;
+  current_operation?: string | null;
 }
+
+export type RecoveryWorkflowState =
+  | 'IDLE'
+  | 'CONFIGURED'
+  | 'STARTING'
+  | 'ANALYZING'
+  | 'RECOVERING'
+  | 'VALIDATING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'RESULTS';
 
 export type RecoveryStatus =
   | 'Pending'
@@ -146,9 +165,20 @@ export interface CreateRecoveryPlanRequest {
 export interface StartRecoveryRequest {
   plan: RecoveryPlan;
   session_token?: string | null;
+  operation_id?: string | null;
 }
 
 export interface ExportRecoveredFilesRequest {
   job_id: string;
   export_dir: string;
+}
+
+export interface OpenRecoveredFileRequest {
+  job_id: string;
+  file_id: string;
+}
+
+export interface RevealRecoveredFileRequest {
+  job_id: string;
+  file_id: string;
 }

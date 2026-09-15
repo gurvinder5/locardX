@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { getAppInfo, AppInfo } from '../services/tauri';
 import { useAuthStore } from '../stores/authStore';
+import { useCaseStore } from '../stores/caseStore';
+import { ActiveCaseRequiredModal } from '../components/case/ActiveCaseRequiredModal';
 import FirstRunSetupPage from '../pages/FirstRunSetupPage';
 import LoginPage from '../pages/LoginPage';
 import UserManagementPage from '../pages/UserManagementPage';
@@ -58,13 +60,17 @@ export const App: React.FC = () => {
     logout,
   } = useAuthStore();
 
+  const { activeCase, loadActiveCase } = useCaseStore();
   const [activeTab, setActiveTab] = useState<NavTab>('device-explorer');
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [infoLoading, setInfoLoading] = useState<boolean>(true);
+  const [showCaseSelectorModal, setShowCaseSelectorModal] = useState(false);
+  const [blockedNavTarget, setBlockedNavTarget] = useState<NavTab | null>(null);
 
   useEffect(() => {
     checkFirstRun();
-  }, [checkFirstRun]);
+    loadActiveCase();
+  }, [checkFirstRun, loadActiveCase]);
 
   useEffect(() => {
     let isMounted = true;
@@ -113,6 +119,17 @@ export const App: React.FC = () => {
 
   const isAdmin = currentUser.role === 'Administrator';
 
+  const handleTabClick = (tab: NavTab) => {
+    if (tab === 'acquisition' || tab === 'recovery') {
+      if (!activeCase || activeCase.status === 'completed' || activeCase.status === 'archived') {
+        setBlockedNavTarget(tab);
+        setShowCaseSelectorModal(true);
+        return;
+      }
+    }
+    setActiveTab(tab);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
       {/* Workstation Header */}
@@ -129,6 +146,47 @@ export const App: React.FC = () => {
           <span className="text-xs text-slate-500 font-medium hidden sm:inline">
             Forensic & Sanitization Workstation
           </span>
+        </div>
+
+        {/* Active Case Indicator */}
+        <div className="flex items-center">
+          {activeCase ? (
+            <button
+              onClick={() => setShowCaseSelectorModal(true)}
+              className="flex items-center gap-2 px-3 py-1 rounded-md bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100 transition-colors shadow-2xs group"
+              title="Click to switch or view active forensic case"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-sky-600 group-hover:scale-105 transition-transform" />
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wider">Active Case:</span>
+                <span className="font-mono font-bold text-sky-900">{activeCase.case_reference}</span>
+                <span className="text-slate-400">—</span>
+                <span className="max-w-[200px] truncate text-slate-700 font-medium">{activeCase.title}</span>
+                <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-bold border ${
+                  activeCase.status === 'open' || activeCase.status === 'in_progress'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`}>
+                  {activeCase.status}
+                </span>
+              </div>
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowCaseSelectorModal(true)}
+              className="flex items-center gap-2 px-3 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-colors shadow-2xs animate-pulse"
+              title="No active case selected. Forensic operations will be blocked. Click to select or create a case."
+            >
+              <Briefcase className="w-3.5 h-3.5 text-amber-600" />
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wider">Active Case:</span>
+                <span className="font-mono font-bold text-amber-900">None</span>
+                <span className="text-[10px] font-semibold text-amber-700 bg-amber-200/60 px-1.5 py-0.5 rounded">
+                  Forensics Blocked
+                </span>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* User Info & Sign Out */}
@@ -168,7 +226,7 @@ export const App: React.FC = () => {
       <nav className="bg-white border-b border-slate-200 px-6">
         <div className="flex space-x-1 overflow-x-auto py-1">
           <button
-            onClick={() => setActiveTab('cases')}
+            onClick={() => handleTabClick('cases')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'cases'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -180,7 +238,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('device-explorer')}
+            onClick={() => handleTabClick('device-explorer')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'device-explorer'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -192,7 +250,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('operations')}
+            onClick={() => handleTabClick('operations')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'operations'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -204,7 +262,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('integrity')}
+            onClick={() => handleTabClick('integrity')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'integrity'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -216,7 +274,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('safety-interlocks')}
+            onClick={() => handleTabClick('safety-interlocks')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'safety-interlocks'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -228,7 +286,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('sanitization-planner')}
+            onClick={() => handleTabClick('sanitization-planner')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'sanitization-planner'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -240,7 +298,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabClick('dashboard')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'dashboard'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -252,7 +310,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('drive-eraser')}
+            onClick={() => handleTabClick('drive-eraser')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'drive-eraser'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -264,7 +322,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('file-eraser')}
+            onClick={() => handleTabClick('file-eraser')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'file-eraser'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -276,7 +334,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('acquisition')}
+            onClick={() => handleTabClick('acquisition')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'acquisition'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -288,7 +346,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('recovery')}
+            onClick={() => handleTabClick('recovery')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'recovery'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -300,7 +358,7 @@ export const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('audit-logs')}
+            onClick={() => handleTabClick('audit-logs')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
               activeTab === 'audit-logs'
                 ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -313,7 +371,7 @@ export const App: React.FC = () => {
 
           {isAdmin && (
             <button
-              onClick={() => setActiveTab('user-management')}
+              onClick={() => handleTabClick('user-management')}
               className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
                 activeTab === 'user-management'
                   ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
@@ -340,7 +398,7 @@ export const App: React.FC = () => {
           <DashboardPage
             appInfo={appInfo}
             loading={infoLoading}
-            onNavigate={(tab) => setActiveTab(tab as NavTab)}
+            onNavigate={(tab) => handleTabClick(tab as NavTab)}
           />
         )}
 
@@ -356,6 +414,29 @@ export const App: React.FC = () => {
 
         {activeTab === 'audit-logs' && <AuditTrailPage />}
       </main>
+
+      {/* Active Case Required Modal */}
+      <ActiveCaseRequiredModal
+        isOpen={showCaseSelectorModal}
+        onClose={() => {
+          setShowCaseSelectorModal(false);
+          setBlockedNavTarget(null);
+        }}
+        operationName={
+          blockedNavTarget === 'acquisition'
+            ? 'Forensic Disk Acquisition'
+            : blockedNavTarget === 'recovery'
+            ? 'Forensic File Recovery'
+            : 'Forensic Operation'
+        }
+        onCaseActivated={() => {
+          setShowCaseSelectorModal(false);
+          if (blockedNavTarget) {
+            setActiveTab(blockedNavTarget);
+            setBlockedNavTarget(null);
+          }
+        }}
+      />
 
       {/* Footer Status Bar */}
       <footer className="border-t border-slate-200 px-6 py-2 text-[11px] text-slate-500 flex justify-between items-center bg-white shadow-xs">

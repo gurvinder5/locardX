@@ -284,3 +284,32 @@ pub async fn verify_audit_chain(
         .verify_chain()
         .map_err(|e| SafeErrorResponse::from(&e))
 }
+
+#[tauri::command]
+pub async fn get_active_case(
+    state: State<'_, AppState>,
+) -> Result<Option<Case>, SafeErrorResponse> {
+    state
+        .case_service
+        .get_active_case()
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub async fn set_active_case(
+    state: State<'_, AppState>,
+    case_id: String,
+) -> Result<Case, SafeErrorResponse> {
+    state
+        .case_service
+        .set_active_case(&case_id)
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub async fn clear_active_case(
+    state: State<'_, AppState>,
+) -> Result<(), SafeErrorResponse> {
+    state.case_service.clear_active_case();
+    Ok(())
+}

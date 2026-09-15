@@ -415,12 +415,12 @@ impl std::fmt::Display for DriveEraseFailureReason {
             Self::SimulationError(msg) => write!(f, "Simulation error: {}", msg),
             Self::RealHardwareExecutionDisabled(msg) => write!(
                 f,
-                "Real hardware execution is disabled in Step 10A: {}",
+                "Real hardware execution is disabled: {}",
                 msg
             ),
             Self::RealHardwareExecutionNotEnabled(msg) => write!(
                 f,
-                "Real hardware execution is not enabled in Step 10B.1: {}",
+                "Real hardware execution is not enabled: {}",
                 msg
             ),
             Self::CapabilityUnknown(msg) => {

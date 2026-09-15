@@ -6,15 +6,31 @@ use crate::models::{
     RecoveryResult, RecoveryStatus,
 };
 use crate::signature::registry::SignatureRegistry;
-use crate::tsk::bridge::run_tsk_inspection;
+use crate::tsk::bridge::run_tsk_inspection_guided;
 use crate::validation::validator::evaluate_candidate;
 use chrono::Utc;
+use sha2::Digest;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
+
+pub fn sanitize_filename(name: &str) -> String {
+    let clean = name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\0'], "_");
+    let trimmed = clean.trim().trim_matches('.');
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("CON")
+        || trimmed.eq_ignore_ascii_case("PRN")
+        || trimmed.eq_ignore_ascii_case("AUX")
+        || trimmed.eq_ignore_ascii_case("NUL")
+    {
+        format!("file_{}", Uuid::new_v4())
+    } else {
+        trimmed.to_string()
+    }
+}
 
 /// Core execution engine orchestrating filesystem analysis and structural carving passes.
 pub struct RecoveryEngine;
@@ -61,6 +77,12 @@ impl RecoveryEngine {
             })?
             .len();
 
+        if total_bytes < 512 {
+            return Err(RecoveryFailureReason::CorruptImage(
+                format!("Evidence image is too small ({} bytes, minimum 512 bytes required)", total_bytes)
+            ));
+        }
+
         let started_at = Utc::now().to_rfc3339();
         let start_instant = std::time::Instant::now();
 
@@ -83,22 +105,76 @@ impl RecoveryEngine {
                 elapsed_seconds: start_instant.elapsed().as_secs_f64(),
                 files_found: 0,
                 stage: "Inspecting partition tables and filesystem metadata".to_string(),
+                filesystem_type: None,
+                phase: Some("ANALYZING".to_string()),
+                entries_examined: 0,
+                deleted_candidates: 0,
+                files_validated: 0,
+                current_operation: Some("Scanning partition tables and volume boot headers".to_string()),
             });
 
-            let tsk_res = run_tsk_inspection(&mut file, total_bytes);
+            let mut files_validated_count = 0;
 
-            for meta_file in tsk_res.metadata_files {
+            let tsk_res = {
+                let mut p_cb = |tsk_prog: crate::tsk::filesystem::TskProgressUpdate| {
+                    progress_cb(RecoveryProgress {
+                        operation_id: operation_id.to_string(),
+                        bytes_scanned: (total_bytes / 4).min(total_bytes),
+                        total_bytes,
+                        percentage: 25.0,
+                        throughput_mbps: 0.0,
+                        elapsed_seconds: start_instant.elapsed().as_secs_f64(),
+                        files_found: tsk_prog.deleted_candidates,
+                        stage: format!("Analyzing {} metadata", tsk_prog.filesystem_type),
+                        filesystem_type: Some(tsk_prog.filesystem_type),
+                        phase: Some("ANALYZING".to_string()),
+                        entries_examined: tsk_prog.entries_examined,
+                        deleted_candidates: tsk_prog.deleted_candidates,
+                        files_validated: files_validated_count,
+                        current_operation: Some(tsk_prog.current_operation),
+                    });
+                };
+                run_tsk_inspection_guided(&mut file, total_bytes, cancellation_token, &mut p_cb)
+            };
+
+            // If user explicitly requested FilesystemOnly mode, verify filesystem inspection succeeded
+            if plan.options.recovery_mode == RecoveryMode::FilesystemOnly {
+                if tsk_res.detected_filesystems.is_empty() {
+                    return Err(RecoveryFailureReason::UnsupportedFilesystem(
+                        "No recognized or supported filesystem (NTFS, FAT32, ext4) detected on evidence image".to_string(),
+                    ));
+                }
+                if let Some(err) = &tsk_res.analysis_error {
+                    if tsk_res.metadata_files.is_empty() {
+                        return Err(RecoveryFailureReason::FilesystemAnalysisFailed(err.clone()));
+                    }
+                }
+            }
+
+            let detected_fs_display = if !tsk_res.detected_filesystems.is_empty() {
+                Some(tsk_res.detected_filesystems.join(", "))
+            } else {
+                None
+            };
+
+            candidates_evaluated += tsk_res.total_entries_examined;
+            let total_meta_candidates = tsk_res.metadata_files.len();
+
+            for (idx, meta_file) in tsk_res.metadata_files.into_iter().enumerate() {
                 if let Some(token) = cancellation_token {
                     if token.load(Ordering::SeqCst) {
                         break;
                     }
                 }
 
-                if meta_file.source_offset + meta_file.size_bytes > total_bytes {
+                let file_end = match meta_file.source_offset.checked_add(meta_file.size_bytes) {
+                    Some(end) => end,
+                    None => continue,
+                };
+                if file_end > total_bytes {
                     continue;
                 }
 
-                candidates_evaluated += 1;
                 existing_offsets.push(meta_file.source_offset);
 
                 let ext = Path::new(&meta_file.name)
@@ -114,19 +190,42 @@ impl RecoveryEngine {
                     }
                 }
 
-                let mut data_buf = vec![0u8; meta_file.size_bytes as usize];
+                progress_cb(RecoveryProgress {
+                    operation_id: operation_id.to_string(),
+                    bytes_scanned: (total_bytes / 2).min(total_bytes),
+                    total_bytes,
+                    percentage: 50.0 + ((idx as f64 / total_meta_candidates.max(1) as f64) * 45.0),
+                    throughput_mbps: 0.0,
+                    elapsed_seconds: start_instant.elapsed().as_secs_f64(),
+                    files_found: recovered_files.len() + 1,
+                    stage: "Validating and extracting deleted file artifact".to_string(),
+                    filesystem_type: detected_fs_display.clone(),
+                    phase: Some("VALIDATING".to_string()),
+                    entries_examined: candidates_evaluated,
+                    deleted_candidates: total_meta_candidates,
+                    files_validated: files_validated_count,
+                    current_operation: Some(format!("Extracting & validating candidate: {}", meta_file.name)),
+                });
+
+                // Cap in-memory validation buffer to at most 16 MiB to prevent memory exhaustion
+                let val_buf_size = (meta_file.size_bytes.min(16 * 1024 * 1024)) as usize;
+                let mut data_buf = vec![0u8; val_buf_size];
                 if file.seek(SeekFrom::Start(meta_file.source_offset)).is_ok()
                     && file.read_exact(&mut data_buf).is_ok()
                 {
-                    let (val_status, sha256_hash, factors) = evaluate_candidate(
+                    let (val_status, mut sha256_hash, factors) = evaluate_candidate(
                         &file_type, &data_buf, &registry, true, // From filesystem metadata
                         true,
                     );
 
                     let (score, grade) = calculate_confidence(&factors);
+                    files_validated_count += 1;
+
                     if score < plan.options.min_confidence_score {
                         continue;
                     }
+
+                    let safe_name = sanitize_filename(&meta_file.name);
 
                     let rel_path = if !plan.options.output_directory.is_empty() {
                         let out_dir = Path::new(&plan.options.output_directory);
@@ -134,10 +233,30 @@ impl RecoveryEngine {
                         let target_dir = out_dir.join(&category_folder);
                         let _ = std::fs::create_dir_all(&target_dir);
 
-                        let target_path = target_dir.join(&meta_file.name);
+                        let target_path = target_dir.join(&safe_name);
                         if let Ok(mut out_file) = File::create(&target_path) {
-                            let _ = out_file.write_all(&data_buf);
-                            Some(format!("{}/{}", category_folder, meta_file.name))
+                            if meta_file.size_bytes <= 16 * 1024 * 1024 {
+                                let _ = out_file.write_all(&data_buf);
+                            } else {
+                                // Stream large file in 1 MiB chunks to prevent OOM
+                                let _ = file.seek(SeekFrom::Start(meta_file.source_offset));
+                                let mut hasher = sha2::Sha256::new();
+                                let mut chunk = vec![0u8; 1024 * 1024];
+                                let mut rem = meta_file.size_bytes;
+                                while rem > 0 {
+                                    let to_read = (rem as usize).min(chunk.len());
+                                    if file.read_exact(&mut chunk[..to_read]).is_err() {
+                                        break;
+                                    }
+                                    let _ = out_file.write_all(&chunk[..to_read]);
+                                    hasher.update(&chunk[..to_read]);
+                                    rem -= to_read as u64;
+                                }
+                                if rem == 0 {
+                                    sha256_hash = format!("{:x}", hasher.finalize());
+                                }
+                            }
+                            Some(format!("{}/{}", category_folder, safe_name))
                         } else {
                             None
                         }
@@ -166,6 +285,23 @@ impl RecoveryEngine {
                     });
                 }
             }
+
+            progress_cb(RecoveryProgress {
+                operation_id: operation_id.to_string(),
+                bytes_scanned: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { total_bytes } else { total_bytes / 2 },
+                total_bytes,
+                percentage: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { 100.0 } else { 50.0 },
+                throughput_mbps: 0.0,
+                elapsed_seconds: start_instant.elapsed().as_secs_f64(),
+                files_found: recovered_files.len(),
+                stage: "Filesystem metadata analysis completed".to_string(),
+                filesystem_type: detected_fs_display,
+                phase: Some(if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { "COMPLETED".to_string() } else { "RECOVERING".to_string() }),
+                entries_examined: candidates_evaluated,
+                deleted_candidates: total_meta_candidates,
+                files_validated: files_validated_count,
+                current_operation: Some(format!("Recovered {} files from filesystem metadata", recovered_files.len())),
+            });
         }
 
         // Stage 2: Sliding Window Raw Carving (if mode is All or CarvingOnly)

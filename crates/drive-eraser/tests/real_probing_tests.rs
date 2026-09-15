@@ -530,7 +530,7 @@ fn test_14_toctou_read_only_write_protection_shift() {
 // =========================================================================
 #[test]
 fn test_15_no_destructive_io_real_hardware_mode_rejected() {
-    let gate = RealHardwareExecutionGate::new();
+    let gate = RealHardwareExecutionGate::with_enabled(false);
     assert!(!gate.is_enabled());
 
     let plan = make_test_plan(

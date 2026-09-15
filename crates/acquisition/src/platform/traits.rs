@@ -9,6 +9,16 @@ pub trait ReadOnlyDeviceStream: Send + Sync {
 
     /// Returns the total expected byte capacity of the underlying physical storage media.
     fn total_bytes(&self) -> u64;
+
+    /// Returns the physical sector size in bytes (e.g. 512 or 4096).
+    fn sector_size(&self) -> u32 {
+        512
+    }
+
+    /// Returns the current stream offset in bytes.
+    fn current_offset(&self) -> u64 {
+        0
+    }
 }
 
 /// Abstract hardware reader interface for physical storage device discovery and stream opening.

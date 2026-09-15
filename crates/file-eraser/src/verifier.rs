@@ -37,18 +37,25 @@ pub fn verify_file_erasure(path: &Path, canonical_str: &str) -> FileVerification
     }
 }
 
-/// Verifies that a folder path and all its child items are completely removed.
+/// Verifies that a folder path and all its child items are completely removed from the filesystem.
 pub fn verify_folder_erasure(
     path: &Path,
     canonical_str: &str,
     stats: &FolderEraseStats,
 ) -> FileVerificationResult {
     let verified_at = Utc::now().to_rfc3339();
-    let dir_exists = path.exists() || Path::new(canonical_str).exists();
+    let original_exists = path.exists();
+    let canon_exists = Path::new(canonical_str).exists();
+    let meta_readable =
+        std::fs::symlink_metadata(path).is_ok() || std::fs::symlink_metadata(canonical_str).is_ok();
+    let dir_exists = original_exists || canon_exists || meta_readable;
 
-    if stats.files_failed > 0 || stats.files_cancelled > 0 || dir_exists {
+    let has_failures =
+        stats.files_failed > 0 || stats.files_cancelled > 0 || !stats.failures.is_empty();
+
+    if dir_exists || has_failures {
         FileVerificationResult {
-            outcome: if stats.files_sanitized > 0 {
+            outcome: if stats.files_sanitized > 0 && !dir_exists {
                 VerificationOutcome::PartiallyVerified
             } else {
                 VerificationOutcome::VerificationFailed
@@ -57,8 +64,13 @@ pub fn verify_folder_erasure(
             path_exists: dir_exists,
             inaccessible: !dir_exists,
             details: format!(
-                "Folder erasure incomplete: dir_exists={}, sanitized={}/{}, failed={}, cancelled={}",
-                dir_exists, stats.files_sanitized, stats.total_files, stats.files_failed, stats.files_cancelled
+                "Folder erasure incomplete: dir_exists={}, sanitized={}/{}, failed={}, cancelled={}, directory_failures={}",
+                dir_exists,
+                stats.files_sanitized,
+                stats.total_files,
+                stats.files_failed,
+                stats.files_cancelled,
+                stats.failures.len()
             ),
             verified_at,
         }
@@ -69,8 +81,8 @@ pub fn verify_folder_erasure(
             path_exists: false,
             inaccessible: true,
             details: format!(
-                "Directory tree completely sanitized and removed. Total {} files and {} directories unlinked.",
-                stats.files_sanitized, stats.directories_removed
+                "Directory tree completely sanitized and removed. Target directory '{}' no longer exists. Total {} files and {} directories unlinked.",
+                canonical_str, stats.files_sanitized, stats.directories_removed
             ),
             verified_at,
         }

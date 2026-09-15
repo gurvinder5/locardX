@@ -1,8 +1,9 @@
 use crate::destination::validate_destination;
 use crate::engine::AcquisitionEngine;
 use crate::models::{
-    AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionFailureReason, AcquisitionPlan,
-    AcquisitionProgress, AcquisitionResult, AcquisitionStatus,
+    AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionDiagnostics,
+    AcquisitionFailureReason, AcquisitionPlan, AcquisitionProgress, AcquisitionRecordDto,
+    AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
 };
 use crate::platform::{AcquisitionSourceReader, RealAcquisitionReader};
 use crate::source::{create_source_snapshot, revalidate_source_snapshot};
@@ -101,6 +102,17 @@ impl AcquisitionService {
         plan: &AcquisitionPlan,
         actor_id: Option<&str>,
     ) -> Result<AcquisitionResult, LocardError> {
+        self.execute_acquisition_with_case(operation_id, plan, actor_id, None)
+    }
+
+    /// Executes a planned acquisition bound to an optional investigation case.
+    pub fn execute_acquisition_with_case(
+        &self,
+        operation_id: &str,
+        plan: &AcquisitionPlan,
+        actor_id: Option<&str>,
+        case_id: Option<&str>,
+    ) -> Result<AcquisitionResult, LocardError> {
         let acquisition_id = format!("acq-{}", uuid::Uuid::new_v4());
         let started_at = chrono::Utc::now().to_rfc3339();
 
@@ -133,12 +145,27 @@ impl AcquisitionService {
                 bytes_acquired: 0,
                 elapsed_seconds: 0.0,
                 average_throughput_mbps: 0.0,
-                failure_reason: Some(e),
+                failure_reason: Some(e.clone()),
+                diagnostics: Some(AcquisitionDiagnostics {
+                    source_device_id: plan.source.device_id.clone(),
+                    source_size_bytes: plan.source.capacity_bytes,
+                    destination_path: plan.destination_path.clone(),
+                    current_byte_offset: 0,
+                    requested_read_size: 0,
+                    bytes_actually_read: 0,
+                    current_stage: "TOCTOU re-probe validation".to_string(),
+                    underlying_error: Some(e.to_string()),
+                    win32_error_code: None,
+                    final_status: "Failed".to_string(),
+                }),
                 audit_reference: "ACQUISITION_SOURCE_MUTATED".to_string(),
+                cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
+                cleanup_error: None,
+                leftover_artifact_path: None,
                 started_at,
                 completed_at: chrono::Utc::now().to_rfc3339(),
             };
-            self.persist_result(&res, actor_id)?;
+            self.persist_result(&res, actor_id, case_id)?;
             return Ok(res);
         }
 
@@ -163,6 +190,14 @@ impl AcquisitionService {
                     &format!("Failed opening source {}: {}", plan.source.device_id, e),
                 );
 
+                let win32_code = match &e {
+                    AcquisitionFailureReason::PermissionDenied { win32_error, .. } => {
+                        Some(*win32_error)
+                    }
+                    AcquisitionFailureReason::DeviceIoError { win32_error, .. } => *win32_error,
+                    _ => None,
+                };
+
                 let res = AcquisitionResult {
                     acquisition_id,
                     operation_id: operation_id.to_string(),
@@ -175,12 +210,27 @@ impl AcquisitionService {
                     bytes_acquired: 0,
                     elapsed_seconds: 0.0,
                     average_throughput_mbps: 0.0,
-                    failure_reason: Some(e),
+                    failure_reason: Some(e.clone()),
+                    diagnostics: Some(AcquisitionDiagnostics {
+                        source_device_id: plan.source.device_id.clone(),
+                        source_size_bytes: plan.source.capacity_bytes,
+                        destination_path: plan.destination_path.clone(),
+                        current_byte_offset: 0,
+                        requested_read_size: 0,
+                        bytes_actually_read: 0,
+                        current_stage: "Opening source physical device stream".to_string(),
+                        underlying_error: Some(e.to_string()),
+                        win32_error_code: win32_code,
+                        final_status: "Failed".to_string(),
+                    }),
                     audit_reference: "ACQUISITION_FAILED".to_string(),
+                    cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
+                    cleanup_error: None,
+                    leftover_artifact_path: None,
                     started_at,
                     completed_at: chrono::Utc::now().to_rfc3339(),
                 };
-                self.persist_result(&res, actor_id)?;
+                self.persist_result(&res, actor_id, case_id)?;
                 return Ok(res);
             }
         };
@@ -188,6 +238,24 @@ impl AcquisitionService {
         // 4. Run acquisition engine with progress callback
         let progress_store = Arc::clone(&self.latest_progress);
         let op_id_owned = operation_id.to_string();
+
+        // Initialize progress store entry immediately so poller finds it on turn 1
+        {
+            let mut store = progress_store.lock().unwrap();
+            store.insert(
+                op_id_owned.clone(),
+                AcquisitionProgress {
+                    operation_id: op_id_owned.clone(),
+                    bytes_acquired: 0,
+                    total_bytes: plan.source.capacity_bytes,
+                    percentage: 0.0,
+                    throughput_mbps: 0.0,
+                    elapsed_seconds: 0.0,
+                    eta_seconds: None,
+                    stage: "Physical disk sector streaming started".to_string(),
+                },
+            );
+        }
 
         let is_cancelled = {
             let flag = Arc::clone(&cancel_flag);
@@ -225,6 +293,24 @@ impl AcquisitionService {
                     0.0
                 };
 
+                // Store final 100% progress state
+                {
+                    let mut store = self.latest_progress.lock().unwrap();
+                    store.insert(
+                        operation_id.to_string(),
+                        AcquisitionProgress {
+                            operation_id: operation_id.to_string(),
+                            bytes_acquired: out.bytes_acquired,
+                            total_bytes: plan.source.capacity_bytes,
+                            percentage: 100.0,
+                            throughput_mbps: (avg_throughput * 10.0).round() / 10.0,
+                            elapsed_seconds: (out.elapsed_seconds * 10.0).round() / 10.0,
+                            eta_seconds: Some(0.0),
+                            stage: "Acquisition complete. Verified SHA-256 integrity.".to_string(),
+                        },
+                    );
+                }
+
                 let audit_ref = self
                     .audit
                     .log_structured_event(
@@ -259,25 +345,70 @@ impl AcquisitionService {
                     elapsed_seconds: out.elapsed_seconds,
                     average_throughput_mbps: (avg_throughput * 10.0).round() / 10.0,
                     failure_reason: None,
+                    diagnostics: Some(AcquisitionDiagnostics {
+                        source_device_id: plan.source.device_id.clone(),
+                        source_size_bytes: plan.source.capacity_bytes,
+                        destination_path: plan.destination_path.clone(),
+                        current_byte_offset: out.bytes_acquired,
+                        requested_read_size: plan.chunk_size_bytes,
+                        bytes_actually_read: out.bytes_acquired as usize,
+                        current_stage: "Acquisition & hashing complete".to_string(),
+                        underlying_error: None,
+                        win32_error_code: None,
+                        final_status: "Completed".to_string(),
+                    }),
                     audit_reference: audit_ref,
+                    cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
+                    cleanup_error: None,
+                    leftover_artifact_path: None,
                     started_at,
                     completed_at,
                 }
             }
-            Err(AcquisitionFailureReason::Cancelled) => {
+            Err(engine_err) => {
+                let reason = engine_err.reason;
+                let cleanup_status = Some(engine_err.cleanup_status);
+                let cleanup_error = engine_err.cleanup_error;
+                let leftover_artifact_path = engine_err
+                    .leftover_path
+                    .map(|p| p.to_string_lossy().to_string());
+
+                let audit_event = match &reason {
+                    AcquisitionFailureReason::Cancelled => "ACQUISITION_CANCELLED",
+                    _ => "ACQUISITION_FAILED",
+                };
                 let audit_ref = self
                     .audit
                     .log_structured_event(
-                        "ACQUISITION_CANCELLED",
+                        audit_event,
                         actor_id,
                         Some(&plan.source.device_id),
-                        &format!(
-                            "Acquisition cancelled by operator for {}",
-                            plan.source.device_id
-                        ),
+                        &format!("Acquisition ended for {}: {}", plan.source.device_id, reason),
                     )
                     .map(|ev| ev.current_hash)
-                    .unwrap_or_else(|_| "ACQUISITION_CANCELLED".to_string());
+                    .unwrap_or_else(|_| audit_event.to_string());
+
+                let (win32_code, offset) = match &reason {
+                    AcquisitionFailureReason::PermissionDenied { win32_error, .. } => {
+                        (Some(*win32_error), 0)
+                    }
+                    AcquisitionFailureReason::DeviceIoError {
+                        win32_error,
+                        offset,
+                        ..
+                    } => (*win32_error, *offset),
+                    _ => (None, 0),
+                };
+
+                let status = match &reason {
+                    AcquisitionFailureReason::Cancelled => AcquisitionStatus::Cancelled,
+                    _ => AcquisitionStatus::Failed,
+                };
+
+                let stage = match &reason {
+                    AcquisitionFailureReason::Cancelled => "Cancelled by operator".to_string(),
+                    _ => "Sequential streaming sector read".to_string(),
+                };
 
                 AcquisitionResult {
                     acquisition_id,
@@ -287,41 +418,26 @@ impl AcquisitionService {
                     image_format: plan.image_format.clone(),
                     image_size_bytes: 0,
                     image_sha256: String::new(),
-                    status: AcquisitionStatus::Cancelled,
-                    bytes_acquired: 0,
+                    status,
+                    bytes_acquired: offset,
                     elapsed_seconds: 0.0,
                     average_throughput_mbps: 0.0,
-                    failure_reason: Some(AcquisitionFailureReason::Cancelled),
-                    audit_reference: audit_ref,
-                    started_at,
-                    completed_at,
-                }
-            }
-            Err(e) => {
-                let audit_ref = self
-                    .audit
-                    .log_structured_event(
-                        "ACQUISITION_FAILED",
-                        actor_id,
-                        Some(&plan.source.device_id),
-                        &format!("Acquisition failed for {}: {}", plan.source.device_id, e),
-                    )
-                    .map(|ev| ev.current_hash)
-                    .unwrap_or_else(|_| "ACQUISITION_FAILED".to_string());
-
-                AcquisitionResult {
-                    acquisition_id,
-                    operation_id: operation_id.to_string(),
-                    source: plan.source.clone(),
-                    destination_path: plan.destination_path.clone(),
-                    image_format: plan.image_format.clone(),
-                    image_size_bytes: 0,
-                    image_sha256: String::new(),
-                    status: AcquisitionStatus::Failed,
-                    bytes_acquired: 0,
-                    elapsed_seconds: 0.0,
-                    average_throughput_mbps: 0.0,
-                    failure_reason: Some(e),
+                    failure_reason: Some(reason.clone()),
+                    diagnostics: Some(AcquisitionDiagnostics {
+                        source_device_id: plan.source.device_id.clone(),
+                        source_size_bytes: plan.source.capacity_bytes,
+                        destination_path: plan.destination_path.clone(),
+                        current_byte_offset: offset,
+                        requested_read_size: plan.chunk_size_bytes,
+                        bytes_actually_read: 0,
+                        current_stage: stage,
+                        underlying_error: Some(reason.to_string()),
+                        win32_error_code: win32_code,
+                        final_status: status.to_string(),
+                    }),
+                    cleanup_status,
+                    cleanup_error,
+                    leftover_artifact_path,
                     audit_reference: audit_ref,
                     started_at,
                     completed_at,
@@ -329,7 +445,7 @@ impl AcquisitionService {
             }
         };
 
-        self.persist_result(&result, actor_id)?;
+        self.persist_result(&result, actor_id, case_id)?;
         Ok(result)
     }
 
@@ -355,6 +471,7 @@ impl AcquisitionService {
         &self,
         result: &AcquisitionResult,
         actor_id: Option<&str>,
+        case_id: Option<&str>,
     ) -> Result<(), LocardError> {
         let snapshot_json = serde_json::to_string(&result.source).map_err(|e| {
             LocardError::Database(format!("Failed to serialize source snapshot: {}", e))
@@ -375,10 +492,10 @@ impl AcquisitionService {
                     source_serial, source_media_type, source_capacity_bytes, source_sector_size,
                     source_bus_type, source_snapshot_json, destination_path, image_format,
                     image_size_bytes, image_sha256, status, bytes_acquired, elapsed_seconds,
-                    failure_reason, audit_reference, started_at, completed_at
+                    failure_reason, audit_reference, case_id, started_at, completed_at
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
+                    ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25
                 )",
                 params![
                     result.acquisition_id,
@@ -403,11 +520,52 @@ impl AcquisitionService {
                     result.elapsed_seconds,
                     failure_json,
                     result.audit_reference,
+                    case_id,
                     result.started_at,
                     result.completed_at,
                 ],
             )?;
             Ok(())
+        })
+    }
+
+    /// Queries all acquisition records from history.
+    pub fn list_acquisition_records(&self) -> Result<Vec<AcquisitionRecordDto>, LocardError> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT acquisition_id, operation_id, actor_id, source_device_id,
+                        source_display_name, source_serial, source_capacity_bytes,
+                        destination_path, image_format, image_size_bytes, image_sha256,
+                        status, case_id, started_at, completed_at
+                 FROM acquisition_records
+                 ORDER BY completed_at DESC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(AcquisitionRecordDto {
+                    acquisition_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    actor_id: row.get(2)?,
+                    source_device_id: row.get(3)?,
+                    source_display_name: row.get(4)?,
+                    source_serial: row.get(5)?,
+                    source_capacity_bytes: row.get::<_, i64>(6)? as u64,
+                    destination_path: row.get(7)?,
+                    image_format: row.get(8)?,
+                    image_size_bytes: row.get::<_, i64>(9)? as u64,
+                    image_sha256: row.get(10)?,
+                    status: row.get(11)?,
+                    case_id: row.get(12)?,
+                    started_at: row.get(13)?,
+                    completed_at: row.get(14)?,
+                })
+            })?;
+
+            let mut records = Vec::new();
+            for r in rows {
+                records.push(r?);
+            }
+            Ok(records)
         })
     }
 
@@ -487,6 +645,10 @@ impl AcquisitionService {
                     elapsed_seconds,
                     average_throughput_mbps: (avg_throughput * 10.0).round() / 10.0,
                     failure_reason,
+                    diagnostics: None,
+                    cleanup_status: None,
+                    cleanup_error: None,
+                    leftover_artifact_path: None,
                     audit_reference,
                     started_at,
                     completed_at,

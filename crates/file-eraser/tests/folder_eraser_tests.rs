@@ -373,3 +373,177 @@ async fn test_folder_containing_locked_file_partial_failure() {
     let _ = fs::remove_file(&locked_file);
     let _ = fs::remove_dir_all(&root_dir);
 }
+
+#[tokio::test]
+async fn test_folder_with_multiple_files() {
+    let (service, safety, token) = setup_test_service();
+    let root_dir = std::env::temp_dir().join(format!("TestFolder_multi_{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&root_dir).unwrap();
+
+    let a_txt = root_dir.join("a.txt");
+    let b_txt = root_dir.join("b.txt");
+    let c_txt = root_dir.join("c.txt");
+
+    fs::write(&a_txt, b"Data in a.txt").unwrap();
+    fs::write(&b_txt, b"Data in b.txt").unwrap();
+    fs::write(&c_txt, b"Data in c.txt").unwrap();
+
+    let dir_str = root_dir.to_string_lossy().to_string();
+
+    let plan = service
+        .plan_folder_erasure(&dir_str, None, Some("admin_folder".to_string()))
+        .await
+        .expect("Folder planning failed");
+
+    let op_id = format!("op-multi-{}", uuid::Uuid::new_v4());
+    let target = TargetIdentity {
+        target_type: TargetType::Directory,
+        identifier: plan.canonical_path.clone(),
+        display_name: dir_str.clone(),
+        size_bytes: Some(plan.pre_metadata.size_bytes),
+    };
+
+    let challenge = safety
+        .request_destructive_confirmation(&op_id, &target, OperationType::FolderErasure, &token)
+        .expect("Challenge failed");
+
+    let result = service
+        .execute_folder_erasure(
+            &plan.plan_id,
+            &challenge.confirmation_id,
+            &op_id,
+            &plan.canonical_path,
+            true,
+            &token,
+            None,
+            None,
+        )
+        .await
+        .expect("Execution failed");
+
+    assert_eq!(result.status, FileEraseStatus::Completed);
+    assert!(!root_dir.exists(), "Selected folder TestFolder must be completely removed");
+    assert!(!a_txt.exists());
+    assert!(!b_txt.exists());
+    assert!(!c_txt.exists());
+
+    let stats = result.folder_stats.expect("Stats must exist");
+    assert_eq!(stats.files_sanitized, 3);
+    assert_eq!(stats.directories_removed, 1);
+    assert_eq!(
+        result.verification.outcome,
+        locardx_verification::sanitization::VerificationOutcome::Verified
+    );
+}
+
+#[tokio::test]
+async fn test_protected_targets_prevented_in_folder_eraser() {
+    let (service, _safety, _token) = setup_test_service();
+
+    let protected_dirs = vec![
+        "C:\\",
+        "C:\\Windows",
+        "C:\\Windows\\System32",
+        "C:\\Program Files",
+        "/",
+        "/etc",
+        "/boot",
+    ];
+
+    for dir in protected_dirs {
+        let res = service
+            .plan_folder_erasure(dir, None, Some("admin_folder".to_string()))
+            .await;
+        assert!(
+            res.is_err(),
+            "Protected directory '{}' must be rejected unconditionally",
+            dir
+        );
+    }
+}
+
+#[test]
+fn test_folder_verification_failure_unit() {
+    use locardx_file_eraser::models::FolderEraseStats;
+    use locardx_file_eraser::verifier::verify_folder_erasure;
+    use locardx_verification::sanitization::VerificationOutcome;
+
+    let temp_dir = std::env::temp_dir().join(format!("test_verif_fail_{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let mut stats = FolderEraseStats::default();
+    stats.total_files = 2;
+    stats.files_sanitized = 1;
+    stats.files_failed = 1;
+
+    // Target still exists on disk, and stats has failures
+    let res = verify_folder_erasure(&temp_dir, &temp_dir.to_string_lossy(), &stats);
+    assert_eq!(res.outcome, VerificationOutcome::VerificationFailed);
+    assert!(res.path_exists);
+    assert!(!res.inaccessible);
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[tokio::test]
+async fn test_symlink_safety_outside_tree() {
+    let (service, safety, token) = setup_test_service();
+    let outside_dir = std::env::temp_dir().join(format!("outside_dir_{}", uuid::Uuid::new_v4()));
+    let target_dir = std::env::temp_dir().join(format!("target_dir_{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&outside_dir).unwrap();
+    fs::create_dir_all(&target_dir).unwrap();
+
+    let outside_file = outside_dir.join("outside_precious_data.txt");
+    fs::write(&outside_file, b"Do not delete this outside file!").unwrap();
+
+    let symlink_path = target_dir.join("symlink_to_outside.txt");
+    #[cfg(windows)]
+    let link_created = std::os::windows::fs::symlink_file(&outside_file, &symlink_path).is_ok();
+    #[cfg(unix)]
+    let link_created = std::os::unix::fs::symlink(&outside_file, &symlink_path).is_ok();
+
+    if link_created {
+        let dir_str = target_dir.to_string_lossy().to_string();
+        let plan = service
+            .plan_folder_erasure(&dir_str, None, Some("admin_folder".to_string()))
+            .await
+            .expect("Planning failed");
+
+        let op_id = format!("op-sym-{}", uuid::Uuid::new_v4());
+        let target = TargetIdentity {
+            target_type: TargetType::Directory,
+            identifier: plan.canonical_path.clone(),
+            display_name: dir_str.clone(),
+            size_bytes: Some(plan.pre_metadata.size_bytes),
+        };
+
+        let challenge = safety
+            .request_destructive_confirmation(&op_id, &target, OperationType::FolderErasure, &token)
+            .unwrap();
+
+        let result = service
+            .execute_folder_erasure(
+                &plan.plan_id,
+                &challenge.confirmation_id,
+                &op_id,
+                &plan.canonical_path,
+                true,
+                &token,
+                None,
+                None,
+            )
+            .await
+            .expect("Execution failed");
+
+        assert_eq!(result.status, FileEraseStatus::Completed);
+        assert!(!target_dir.exists(), "Target folder should be unlinked");
+        assert!(
+            outside_file.exists(),
+            "External file must NOT be destroyed by symlink traversal!"
+        );
+        let content = fs::read_to_string(&outside_file).unwrap();
+        assert_eq!(content, "Do not delete this outside file!");
+    }
+
+    let _ = fs::remove_dir_all(&outside_dir);
+}
