@@ -239,3 +239,44 @@ pub struct CaseSummary {
     pub audit_chain_status: String,
     pub last_activity_at: String,
 }
+
+/// Evidential acquisition item linked to a case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaseAcquisitionItem {
+    pub acquisition_id: String,
+    pub operation_id: String,
+    pub source_device_id: String,
+    pub source_display_name: String,
+    pub destination_path: String,
+    pub image_format: String,
+    pub image_size_bytes: u64,
+    pub image_sha256: String,
+    pub status: String,
+    pub completed_at: String,
+}
+
+/// Evidential recovery job linked to a case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaseRecoveryItem {
+    pub job_id: String,
+    pub operation_id: String,
+    pub source_image_path: String,
+    pub source_image_sha256: String,
+    pub recovery_mode: String,
+    pub status: String,
+    pub files_recovered: usize,
+    pub completed_at: String,
+}
+
+/// Sanitization operation (drive or file erasure) linked to a case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaseErasureItem {
+    pub record_id: String,
+    pub operation_id: String,
+    pub target_identifier: String,
+    pub erasure_type: String, // "Drive" or "File"
+    pub method: String,
+    pub status: String,
+    pub verification_outcome: String,
+    pub completed_at: String,
+}

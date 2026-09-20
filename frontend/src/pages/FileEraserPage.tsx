@@ -27,6 +27,8 @@ import {
 } from '../services/fileEraser';
 import { requestDestructiveConfirmation } from '../services/safety';
 import { useAuthStore } from '../stores/authStore';
+import { useCaseStore } from '../stores/caseStore';
+import { ActiveCaseBanner } from '../components/case/ActiveCaseBanner';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -38,6 +40,8 @@ function formatBytes(bytes: number): string {
 
 export const FileEraserPage: React.FC = () => {
   const sessionToken = useAuthStore((s) => s.sessionToken);
+  const { activeCase } = useCaseStore();
+  const [associateWithCase, setAssociateWithCase] = useState<boolean>(true);
 
   // Form State
   const [scope, setScope] = useState<FileEraseScope>('File');
@@ -82,11 +86,13 @@ export const FileEraserPage: React.FC = () => {
 
     try {
       setIsPlanning(true);
+      const targetCaseId = associateWithCase && activeCase ? activeCase.case_id : null;
       if (scope === 'File') {
         const planned = await planFileErasure({
           target_path: trimmed,
           method,
           session_token: sessionToken,
+          case_id: targetCaseId,
         });
         setPlan(planned);
       } else {
@@ -94,6 +100,7 @@ export const FileEraserPage: React.FC = () => {
           target_path: trimmed,
           method,
           session_token: sessionToken,
+          case_id: targetCaseId,
         });
         setPlan(planned);
       }
@@ -157,7 +164,8 @@ export const FileEraserPage: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      if (plan.scope === 'File') {
+      const targetCaseId = associateWithCase && activeCase ? activeCase.case_id : null;
+      if (scope === 'File') {
         const res = await executeFileErasure({
           plan_id: plan.plan_id,
           confirmation_id: confirmationId,
@@ -165,6 +173,7 @@ export const FileEraserPage: React.FC = () => {
           typed_confirmation: typedConfirmation.trim(),
           warning_acknowledged: true,
           session_token: sessionToken || '',
+          case_id: targetCaseId,
         });
         setResult(res);
       } else {
@@ -175,6 +184,7 @@ export const FileEraserPage: React.FC = () => {
           typed_confirmation: typedConfirmation.trim(),
           warning_acknowledged: true,
           session_token: sessionToken || '',
+          case_id: targetCaseId,
         });
         setResult(res);
       }
@@ -210,6 +220,12 @@ export const FileEraserPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Active Forensic Case Banner & Context */}
+      <ActiveCaseBanner
+        associateWithCase={associateWithCase}
+        onToggleAssociate={setAssociateWithCase}
+      />
+
       {/* Header Banner */}
       <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-xs">
         <div className="flex items-start justify-between">

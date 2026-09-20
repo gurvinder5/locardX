@@ -13,6 +13,7 @@ import {
 import { AppInfo } from '../services/tauri';
 import { listCases, verifyAuditChain } from '../services/case';
 import { Case, AuditChainVerification } from '../types/case';
+import { useCaseStore } from '../stores/caseStore';
 
 interface DashboardPageProps {
   appInfo: AppInfo | null;
@@ -24,6 +25,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ appInfo, loading, 
   const [cases, setCases] = useState<Case[]>([]);
   const [auditStatus, setAuditStatus] = useState<AuditChainVerification | null>(null);
   const [loadingCases, setLoadingCases] = useState<boolean>(true);
+  const { activeCase, loadActiveCase } = useCaseStore();
+
+  useEffect(() => {
+    loadActiveCase();
+  }, [loadActiveCase]);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,6 +80,59 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ appInfo, loading, 
           </div>
         </div>
       </section>
+
+      {/* Active Case Highlights */}
+      {activeCase ? (
+        <section className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white border border-sky-800/60 rounded-md p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-sky-500/20 rounded-md border border-sky-400/30 text-sky-400">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
+                  Active Investigation
+                </span>
+                <span className="text-[11px] font-mono bg-sky-900/80 px-2 py-0.5 rounded border border-sky-700/50 text-sky-100 font-bold">
+                  {activeCase.case_reference}
+                </span>
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {activeCase.status}
+                </span>
+              </div>
+              <h3 className="text-sm font-semibold text-white mt-1">{activeCase.title}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Lead: <span className="text-slate-300">{activeCase.lead_investigator}</span> • Created: {new Date(activeCase.created_at).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('cases')}
+              className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded shadow-xs transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              <span>Case Workspace</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </section>
+      ) : (
+        <section className="bg-slate-50 border border-dashed border-slate-300 rounded-md p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-slate-600">
+            <Briefcase className="w-4 h-4 text-slate-400 shrink-0" />
+            <span>No active case currently selected. Forensic acquisitions and recoveries require an active case.</span>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('cases')}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 shrink-0"
+            >
+              <span>Select Active Case</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </section>
+      )}
 
       {/* Case Management & Quick Navigation Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

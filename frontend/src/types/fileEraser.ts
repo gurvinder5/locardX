@@ -78,12 +78,14 @@ export interface PlanFileEraseRequest {
   target_path: string;
   method?: string | null;
   session_token?: string | null;
+  case_id?: string | null;
 }
 
 export interface PlanFolderEraseRequest {
   target_path: string;
   method?: string | null;
   session_token?: string | null;
+  case_id?: string | null;
 }
 
 export interface ExecuteFileEraseRequest {
@@ -93,6 +95,7 @@ export interface ExecuteFileEraseRequest {
   typed_confirmation: string;
   warning_acknowledged: boolean;
   session_token: string;
+  case_id?: string | null;
 }
 
 export interface ExecuteFolderEraseRequest {
@@ -102,4 +105,5 @@ export interface ExecuteFolderEraseRequest {
   typed_confirmation: string;
   warning_acknowledged: boolean;
   session_token: string;
+  case_id?: string | null;
 }

@@ -240,6 +240,17 @@ impl RecoveryService {
         actor_id: Option<&str>,
         custom_operation_id: Option<&str>,
     ) -> Result<RecoveryResult, LocardError> {
+        self.execute_recovery_with_case(plan, actor_id, custom_operation_id, None)
+    }
+
+    /// Executes recovery with a specified operation ID and optional case ID, recording telemetry, persisting outputs, and generating reports.
+    pub fn execute_recovery_with_case(
+        &self,
+        plan: &RecoveryPlan,
+        actor_id: Option<&str>,
+        custom_operation_id: Option<&str>,
+        case_id: Option<&str>,
+    ) -> Result<RecoveryResult, LocardError> {
         let job_id = format!("job-rec-{}", Uuid::new_v4());
         let operation_id = custom_operation_id
             .filter(|s| !s.trim().is_empty())
@@ -259,8 +270,8 @@ impl RecoveryService {
                     job_id, operation_id, actor_id, acquisition_id, source_image_path,
                     source_image_sha256, recovery_mode, status, bytes_scanned, files_recovered,
                     candidates_evaluated, elapsed_seconds, failure_reason, audit_reference,
-                    started_at, completed_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 0, 0, 0.0, NULL, ?9, ?10, ?10)",
+                    case_id, started_at, completed_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 0, 0, 0.0, NULL, ?9, ?10, ?11, ?11)",
                 params![
                     job_id,
                     operation_id,
@@ -271,6 +282,7 @@ impl RecoveryService {
                     format!("{:?}", plan.options.recovery_mode),
                     "Scanning",
                     format!("audit-rec-{}", Uuid::new_v4()),
+                    case_id,
                     started_at,
                 ],
             )?;

@@ -119,6 +119,10 @@ fn main() {
             locardx_desktop::commands::get_active_case,
             locardx_desktop::commands::set_active_case,
             locardx_desktop::commands::clear_active_case,
+            locardx_desktop::commands::reopen_case,
+            locardx_desktop::commands::list_case_acquisitions,
+            locardx_desktop::commands::list_case_recoveries,
+            locardx_desktop::commands::list_case_erasures,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running LocardX Tauri desktop application");

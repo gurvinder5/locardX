@@ -393,6 +393,7 @@ mod tests {
                 target_path: file_path_str.clone(),
                 method: Some("LogicalFileShred".to_string()),
                 session_token: Some(session.token.clone()),
+                case_id: None,
             },
         )
         .await
@@ -409,6 +410,7 @@ mod tests {
                 target_path: "C:\\Windows\\notepad.exe".to_string(),
                 method: None,
                 session_token: Some(session.token.clone()),
+                case_id: None,
             },
         )
         .await;
@@ -443,6 +445,7 @@ mod tests {
                 typed_confirmation: plan.canonical_path.clone(),
                 warning_acknowledged: true,
                 session_token: session.token.clone(),
+                case_id: None,
             },
         )
         .await
@@ -483,6 +486,7 @@ mod tests {
                 requested_method: None,
                 execution_mode: None,
                 session_token: None,
+                case_id: None,
             },
         )
         .await
@@ -502,6 +506,7 @@ mod tests {
                 typed_confirmation: r"\\.\PhysicalDrive1".to_string(),
                 warning_acknowledged: true,
                 session_token: "test-token-session".to_string(),
+                case_id: None,
             },
         )
         .await
@@ -549,6 +554,7 @@ mod tests {
                 typed_confirmation: r"\\.\PhysicalDrive1".to_string(),
                 warning_acknowledged: true,
                 session_token: "test-token-session".to_string(),
+                case_id: None,
             },
         )
         .await;

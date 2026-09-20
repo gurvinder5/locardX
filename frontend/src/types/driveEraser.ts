@@ -174,6 +174,7 @@ export interface PlanDriveEraseRequest {
   requested_method?: string | null;
   execution_mode?: ExecutionMode | null;
   session_token?: string | null;
+  case_id?: string | null;
 }
 
 export interface ExecuteDriveEraseSimulationRequest {
@@ -183,6 +184,7 @@ export interface ExecuteDriveEraseSimulationRequest {
   typed_confirmation: string;
   warning_acknowledged: boolean;
   session_token: string;
+  case_id?: string | null;
 }
 
 export interface DrivePrivilegeStatus {

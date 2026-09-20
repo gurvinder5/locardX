@@ -313,3 +313,54 @@ pub async fn clear_active_case(
     state.case_service.clear_active_case();
     Ok(())
 }
+
+#[tauri::command]
+pub async fn reopen_case(
+    state: State<'_, AppState>,
+    session_token: Option<String>,
+    case_id: String,
+) -> Result<Case, SafeErrorResponse> {
+    let user = authenticate_with_permission(
+        &state,
+        session_token.as_deref(),
+        locardx_auth::Permission::CaseModify,
+    )?;
+    state
+        .case_service
+        .reopen_case(&case_id, &user)
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub async fn list_case_acquisitions(
+    state: State<'_, AppState>,
+    case_id: String,
+) -> Result<Vec<CaseAcquisitionItem>, SafeErrorResponse> {
+    state
+        .case_service
+        .list_case_acquisitions(&case_id)
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub async fn list_case_recoveries(
+    state: State<'_, AppState>,
+    case_id: String,
+) -> Result<Vec<CaseRecoveryItem>, SafeErrorResponse> {
+    state
+        .case_service
+        .list_case_recoveries(&case_id)
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+
+#[tauri::command]
+pub async fn list_case_erasures(
+    state: State<'_, AppState>,
+    case_id: String,
+) -> Result<Vec<CaseErasureItem>, SafeErrorResponse> {
+    state
+        .case_service
+        .list_case_erasures(&case_id)
+        .map_err(|e| SafeErrorResponse::from(&e))
+}
+

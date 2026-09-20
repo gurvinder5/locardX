@@ -730,6 +730,46 @@ impl Database {
             );
         }
 
+        // Migration 015: Cross-Module Case Management Integration
+        let migration_15_applied: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 15",
+                [],
+                |row| {
+                    let count: i64 = row.get(0)?;
+                    Ok(count > 0)
+                },
+            )
+            .unwrap_or(false);
+
+        if !migration_15_applied {
+            // 1. Add case_id to drive_erasure_records if missing
+            let _ = conn.execute("ALTER TABLE drive_erasure_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_drive_erasure_case ON drive_erasure_records(case_id);",
+                [],
+            );
+
+            // 2. Add case_id to file_erasure_records if missing
+            let _ = conn.execute("ALTER TABLE file_erasure_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_file_erasure_case ON file_erasure_records(case_id);",
+                [],
+            );
+
+            // 3. Add case_id to operations if missing
+            let _ = conn.execute("ALTER TABLE operations ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_operations_case ON operations(case_id);",
+                [],
+            );
+
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (15, datetime('now'));",
+                [],
+            );
+        }
+
         info!("SQLite schema and migrations verified.");
         Ok(())
     }

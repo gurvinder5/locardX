@@ -6,12 +6,18 @@ import {
   ShieldCheck,
   FileText,
   Plus,
+  Search,
+  Layers,
 } from 'lucide-react';
 import { useCases } from '../hooks/useCases';
+import { useCaseStore } from '../stores/caseStore';
 import { CaseList } from '../components/case/CaseList';
 import { CaseOverview } from '../components/case/CaseOverview';
 import { CaseOperationsView } from '../components/case/CaseOperationsView';
 import { CaseEvidenceView } from '../components/case/CaseEvidenceView';
+import { CaseAcquisitionsView } from '../components/case/CaseAcquisitionsView';
+import { CaseRecoveriesView } from '../components/case/CaseRecoveriesView';
+import { CaseErasuresView } from '../components/case/CaseErasuresView';
 import { CaseCustodyTimeline } from '../components/case/CaseCustodyTimeline';
 import { CaseReportsView } from '../components/case/CaseReportsView';
 import { CreateCaseModal } from '../components/case/CreateCaseModal';
@@ -26,11 +32,15 @@ export const CaseManagementPage: React.FC = () => {
     evidence,
     timeline,
     reports,
+    acquisitions,
+    recoveries,
+    erasures,
     activeReport,
     loading,
     selectCase,
     createNewCase,
     changeCaseStatus,
+    reopenActiveCase,
     linkOperation,
     linkEvidence,
     addCustodyRecord,
@@ -39,7 +49,11 @@ export const CaseManagementPage: React.FC = () => {
     verifyReport,
   } = useCases();
 
-  const [activeSubTab, setActiveSubTab] = useState<'operations' | 'evidence' | 'custody' | 'reports'>('operations');
+  const { activeCase: globalActiveCase, setActiveCase: setGlobalActiveCase } = useCaseStore();
+
+  const [activeSubTab, setActiveSubTab] = useState<
+    'operations' | 'evidence' | 'acquisitions' | 'recoveries' | 'erasures' | 'custody' | 'reports'
+  >('operations');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
 
@@ -55,6 +69,8 @@ export const CaseManagementPage: React.FC = () => {
       setReportLoading(false);
     }
   };
+
+  const isSelectedCaseActive = activeCase?.case_id === globalActiveCase?.case_id;
 
   return (
     <div className="space-y-6">
@@ -78,58 +94,103 @@ export const CaseManagementPage: React.FC = () => {
               <CaseOverview
                 currentCase={activeCase}
                 summary={summary}
+                isCurrentlyActive={isSelectedCaseActive}
+                onToggleActive={async () => {
+                  if (activeCase) {
+                    await setGlobalActiveCase(activeCase.case_id);
+                  }
+                }}
                 onChangeStatus={(st: CaseStatus) => changeCaseStatus(activeCase.case_id, st)}
+                onReopenCase={async () => {
+                  await reopenActiveCase(activeCase.case_id);
+                }}
                 onGenerateReport={handleGenerateReport}
                 reportLoading={reportLoading}
               />
 
               {/* Sub-tab Navigation */}
-              <div className="bg-white border border-slate-200 rounded-md p-1 flex space-x-1 shadow-2xs">
+              <div className="bg-white border border-slate-200 rounded-md p-1 flex space-x-1 shadow-2xs overflow-x-auto">
                 <button
                   onClick={() => setActiveSubTab('operations')}
-                  className={`flex-1 py-1.5 px-3 rounded text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'operations'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
-                  <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                  <Activity className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                   <span>Operations ({operations.length})</span>
                 </button>
 
                 <button
                   onClick={() => setActiveSubTab('evidence')}
-                  className={`flex-1 py-1.5 px-3 rounded text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'evidence'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
-                  <HardDrive className="w-3.5 h-3.5 text-sky-400" />
+                  <HardDrive className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                   <span>Evidence ({evidence.length})</span>
                 </button>
 
                 <button
+                  onClick={() => setActiveSubTab('acquisitions')}
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                    activeSubTab === 'acquisitions'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <HardDrive className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Acquisitions ({acquisitions.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveSubTab('recoveries')}
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                    activeSubTab === 'recoveries'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Search className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Recoveries ({recoveries.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveSubTab('erasures')}
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                    activeSubTab === 'erasures'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Erasures ({erasures.length})</span>
+                </button>
+
+                <button
                   onClick={() => setActiveSubTab('custody')}
-                  className={`flex-1 py-1.5 px-3 rounded text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'custody'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Chain of Custody ({timeline.length})</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Custody ({timeline.length})</span>
                 </button>
 
                 <button
                   onClick={() => setActiveSubTab('reports')}
-                  className={`flex-1 py-1.5 px-3 rounded text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'reports'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
-                  <FileText className="w-3.5 h-3.5 text-purple-400" />
+                  <FileText className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                   <span>Reports ({reports.length})</span>
                 </button>
               </div>
@@ -151,6 +212,18 @@ export const CaseManagementPage: React.FC = () => {
                     await linkEvidence(activeCase.case_id, req);
                   }}
                 />
+              )}
+
+              {activeSubTab === 'acquisitions' && (
+                <CaseAcquisitionsView acquisitions={acquisitions} />
+              )}
+
+              {activeSubTab === 'recoveries' && (
+                <CaseRecoveriesView recoveries={recoveries} />
+              )}
+
+              {activeSubTab === 'erasures' && (
+                <CaseErasuresView erasures={erasures} />
               )}
 
               {activeSubTab === 'custody' && (
@@ -199,5 +272,3 @@ export const CaseManagementPage: React.FC = () => {
     </div>
   );
 };
-
-export default CaseManagementPage;

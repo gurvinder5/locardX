@@ -13,6 +13,7 @@ pub struct PlanFileEraseRequest {
     pub target_path: String,
     pub method: Option<String>,
     pub session_token: Option<String>,
+    pub case_id: Option<String>,
 }
 
 /// Request payload for planning a recursive folder erasure operation.
@@ -21,6 +22,7 @@ pub struct PlanFolderEraseRequest {
     pub target_path: String,
     pub method: Option<String>,
     pub session_token: Option<String>,
+    pub case_id: Option<String>,
 }
 
 /// Request payload for executing a confirmed file erasure operation.
@@ -32,6 +34,7 @@ pub struct ExecuteFileEraseRequest {
     pub typed_confirmation: String,
     pub warning_acknowledged: bool,
     pub session_token: String,
+    pub case_id: Option<String>,
 }
 
 /// Request payload for executing a confirmed recursive folder erasure operation.
@@ -43,6 +46,7 @@ pub struct ExecuteFolderEraseRequest {
     pub typed_confirmation: String,
     pub warning_acknowledged: bool,
     pub session_token: String,
+    pub case_id: Option<String>,
 }
 
 /// DTO for file metadata snapshot.
@@ -222,6 +226,12 @@ pub async fn plan_file_erasure_handler(
     state: &AppState,
     request: PlanFileEraseRequest,
 ) -> Result<FileErasePlanDto, SafeErrorResponse> {
+    // Validate optional case or authorized standalone execution
+    let _ = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let actor_id = if let Some(tok) = &request.session_token {
         state.auth.get_current_user(tok).ok().map(|u| u.username)
     } else {
@@ -242,6 +252,12 @@ pub async fn plan_folder_erasure_handler(
     state: &AppState,
     request: PlanFolderEraseRequest,
 ) -> Result<FileErasePlanDto, SafeErrorResponse> {
+    // Validate optional case or authorized standalone execution
+    let _ = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let actor_id = if let Some(tok) = &request.session_token {
         state.auth.get_current_user(tok).ok().map(|u| u.username)
     } else {
@@ -262,6 +278,11 @@ pub async fn execute_file_erasure_handler(
     state: &AppState,
     request: ExecuteFileEraseRequest,
 ) -> Result<FileEraseResultDto, SafeErrorResponse> {
+    let case_opt = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let result = state
         .file_eraser
         .execute_file_erasure(
@@ -277,6 +298,46 @@ pub async fn execute_file_erasure_handler(
         .await
         .map_err(|e| SafeErrorResponse::from(&e))?;
 
+    if let Some(case) = &case_opt {
+        let _ = state.db.with_conn(|conn| {
+            let _ = conn.execute(
+                "UPDATE file_erasure_records SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            let _ = conn.execute(
+                "UPDATE operations SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            Ok(())
+        });
+
+        let user = state
+            .auth
+            .get_current_user(&request.session_token)
+            .unwrap_or_else(|_| locardx_auth::PublicUser {
+                user_id: "sys-operator".to_string(),
+                username: "operator".to_string(),
+                role: locardx_auth::UserRole::Operator,
+                display_name: Some("Forensic Operator".to_string()),
+                enabled: true,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                last_login_at: None,
+                metadata_json: "{}".to_string(),
+            });
+
+        let _ = state.case_service.associate_operation(
+            &case.case_id,
+            &request.operation_id,
+            "FileErasure",
+            &user,
+            Some(&format!(
+                "File sanitization ({}) on {}",
+                result.method, result.target_path
+            )),
+        );
+    }
+
     Ok(FileEraseResultDto::from(&result))
 }
 
@@ -284,6 +345,11 @@ pub async fn execute_folder_erasure_handler(
     state: &AppState,
     request: ExecuteFolderEraseRequest,
 ) -> Result<FileEraseResultDto, SafeErrorResponse> {
+    let case_opt = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let result = state
         .file_eraser
         .execute_folder_erasure(
@@ -298,6 +364,46 @@ pub async fn execute_folder_erasure_handler(
         )
         .await
         .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    if let Some(case) = &case_opt {
+        let _ = state.db.with_conn(|conn| {
+            let _ = conn.execute(
+                "UPDATE file_erasure_records SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            let _ = conn.execute(
+                "UPDATE operations SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            Ok(())
+        });
+
+        let user = state
+            .auth
+            .get_current_user(&request.session_token)
+            .unwrap_or_else(|_| locardx_auth::PublicUser {
+                user_id: "sys-operator".to_string(),
+                username: "operator".to_string(),
+                role: locardx_auth::UserRole::Operator,
+                display_name: Some("Forensic Operator".to_string()),
+                enabled: true,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                last_login_at: None,
+                metadata_json: "{}".to_string(),
+            });
+
+        let _ = state.case_service.associate_operation(
+            &case.case_id,
+            &request.operation_id,
+            "FileErasure",
+            &user,
+            Some(&format!(
+                "Folder sanitization ({}) on {}",
+                result.method, result.target_path
+            )),
+        );
+    }
 
     Ok(FileEraseResultDto::from(&result))
 }

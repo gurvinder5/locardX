@@ -249,3 +249,39 @@ export interface AuditChainVerification {
   broken_sequence: number | null;
   details: string;
 }
+
+export interface CaseAcquisitionItem {
+  acquisition_id: string;
+  operation_id: string;
+  source_device_id: string;
+  source_display_name: string;
+  destination_path: string;
+  image_format: string;
+  image_size_bytes: number;
+  image_sha256: string;
+  status: string;
+  completed_at: string;
+}
+
+export interface CaseRecoveryItem {
+  job_id: string;
+  operation_id: string;
+  source_image_path: string;
+  source_image_sha256: string;
+  recovery_mode: string;
+  status: string;
+  files_recovered: number;
+  completed_at: string;
+}
+
+export interface CaseErasureItem {
+  record_id: string;
+  operation_id: string;
+  target_identifier: string;
+  erasure_type: 'Drive' | 'File' | string;
+  method: string;
+  status: string;
+  verification_outcome: string;
+  completed_at: string;
+}
+

@@ -604,3 +604,274 @@ fn test_active_case_enforcement() {
     assert!(service.set_active_case("non-existent-case").is_err());
 }
 
+#[test]
+fn test_case_validation_guards_and_closure_prevention() {
+    let (service, actor) = setup_test_context();
+
+    // 1. Validation for operation without case: fails closed
+    let val_err = service.validate_case_for_operation(None).unwrap_err();
+    match val_err {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("ACTIVE_CASE_REQUIRED"));
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // 2. Dual-mode validation for standalone (None): succeeds
+    let standalone = service
+        .validate_optional_case_or_standalone(None)
+        .expect("Standalone allowed");
+    assert!(standalone.is_none());
+
+    // 3. Create a case
+    let req = CreateCaseRequest {
+        case_reference: "CASE-VAL-01".to_string(),
+        title: "Validation Guards Test".to_string(),
+        description: "Testing operation validation and closure prevention".to_string(),
+        metadata_json: None,
+    };
+    let case = service.create_case(req, &actor).expect("Create case");
+
+    // 4. Validate with valid open case
+    let val_ok = service
+        .validate_case_for_operation(Some(&case.case_id))
+        .expect("Valid case");
+    assert_eq!(val_ok.case_id, case.case_id);
+
+    let dual_ok = service
+        .validate_optional_case_or_standalone(Some(&case.case_id))
+        .expect("Valid case dual");
+    assert_eq!(dual_ok.unwrap().case_id, case.case_id);
+
+    // 5. Validation with non-existent case ID fails
+    assert!(service
+        .validate_case_for_operation(Some("ghost-case"))
+        .is_err());
+    assert!(service
+        .validate_optional_case_or_standalone(Some("ghost-case"))
+        .is_err());
+
+    // 6. Test closure prevention when non-terminal operations exist
+    service
+        .database()
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO operations (
+                operation_id, operation_type, target_type, target_identifier, target_display_name, actor_id, current_state, created_at, started_at, case_id
+            ) VALUES (
+                'op-running-1', 'DriveErasure', 'Device', '\\\\.\\PhysicalDrive1', 'Test Drive', 'detective_miller', 'Running', '2026-09-12T00:00:00Z', '2026-09-12T00:00:00Z', ?1
+            )",
+                [&case.case_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    // Attempting to close or archive case while op-running-1 is Running MUST fail
+    let close_err = service
+        .update_case_status(&case.case_id, CaseStatus::Completed, &actor)
+        .unwrap_err();
+    match close_err {
+        locardx_common::LocardError::Operation(msg) => {
+            assert!(msg.contains("Cannot close case"));
+        }
+        other => panic!("Expected Operation error, got {:?}", other),
+    }
+
+    // Mark operation as completed in database
+    service
+        .database()
+        .with_conn(|conn| {
+            conn.execute(
+                "UPDATE operations SET current_state = 'Completed', completed_at = '2026-09-12T01:00:00Z' WHERE operation_id = 'op-running-1'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    // Now closing case succeeds!
+    let closed = service
+        .update_case_status(&case.case_id, CaseStatus::Completed, &actor)
+        .expect("Close succeeds now");
+    assert_eq!(closed.status, CaseStatus::Completed);
+
+    // 7. Validate operation against closed case fails
+    let closed_val_err = service
+        .validate_case_for_operation(Some(&case.case_id))
+        .unwrap_err();
+    match closed_val_err {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("CASE_CLOSED"));
+        }
+        other => panic!("Expected SecurityViolation error, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_case_reopening_authorization() {
+    let (service, actor) = setup_test_context();
+
+    // Create and close case
+    let req = CreateCaseRequest {
+        case_reference: "CASE-REOPEN-01".to_string(),
+        title: "Reopening Test".to_string(),
+        description: "Testing reopening authorization".to_string(),
+        metadata_json: None,
+    };
+    let case = service.create_case(req, &actor).expect("Create case");
+    service
+        .update_case_status(&case.case_id, CaseStatus::Completed, &actor)
+        .expect("Close case");
+
+    // Viewer actor should be rejected
+    let viewer_actor = PublicUser {
+        user_id: "user-viewer-01".to_string(),
+        username: "viewer_bob".to_string(),
+        role: UserRole::Viewer,
+        display_name: None,
+        enabled: true,
+        created_at: "2026-09-12T00:00:00Z".to_string(),
+        updated_at: "2026-09-12T00:00:00Z".to_string(),
+        last_login_at: None,
+        metadata_json: "{}".to_string(),
+    };
+
+    let reopen_err = service
+        .reopen_case(&case.case_id, &viewer_actor)
+        .unwrap_err();
+    match reopen_err {
+        locardx_common::LocardError::SecurityViolation(msg) => {
+            assert!(msg.contains("Only an Administrator or Investigator"));
+        }
+        other => panic!("Expected SecurityViolation, got {:?}", other),
+    }
+
+    // Authorized investigator actor succeeds
+    let reopened = service
+        .reopen_case(&case.case_id, &actor)
+        .expect("Reopen succeeds");
+    assert_eq!(reopened.status, CaseStatus::InProgress);
+    assert!(reopened.closed_at.is_none());
+
+    // Verify CASE_REOPENED audit event
+    let events = service.audit().list_events(10).expect("List audit");
+    let reopen_ev = events.iter().find(|e| e.event_type == "CASE_REOPENED");
+    assert!(
+        reopen_ev.is_some(),
+        "CASE_REOPENED audit event must be logged"
+    );
+}
+
+#[test]
+fn test_case_module_queries() {
+    let (service, actor) = setup_test_context();
+
+    let req = CreateCaseRequest {
+        case_reference: "CASE-QUERIES-01".to_string(),
+        title: "Module Queries Test".to_string(),
+        description: "Testing listing acquisitions, recoveries, erasures".to_string(),
+        metadata_json: None,
+    };
+    let case = service.create_case(req, &actor).expect("Create case");
+
+    // Seed acquisition, recovery, drive erasure, and file erasure records with case_id
+    service
+        .database()
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO acquisition_records (
+                acquisition_id, operation_id, actor_id, source_device_id, source_display_name,
+                source_serial, source_media_type, source_capacity_bytes, source_sector_size,
+                source_snapshot_json, destination_path, image_format, image_size_bytes,
+                image_sha256, status, bytes_acquired, elapsed_seconds, audit_reference, started_at, completed_at, case_id
+            ) VALUES (
+                'acq-q-1', 'op-acq-q1', 'detective_miller', '\\\\.\\PhysicalDrive1', 'Seagate Barracuda',
+                'SN-123', 'HDD', 2000000000000, 512, '{}', '/evidence/acq1.raw', 'Raw/DD',
+                2000000000000, 'hash1', 'Completed', 2000000000000, 100.0, 'AUDIT_Q1',
+                '2026-09-12T01:00:00Z', '2026-09-12T01:30:00Z', ?1
+            )",
+                [&case.case_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO recovery_jobs (
+                job_id, operation_id, actor_id, acquisition_id, source_image_path, source_image_sha256,
+                recovery_mode, status, bytes_scanned, files_recovered, candidates_evaluated,
+                elapsed_seconds, audit_reference, started_at, completed_at, case_id
+            ) VALUES (
+                'rec-q-1', 'op-rec-q1', 'detective_miller', 'acq-q-1', '/evidence/acq1.raw', 'hash1',
+                'All', 'Completed', 2000000000000, 15, 20, 50.0, 'AUDIT_REC_Q1',
+                '2026-09-12T02:00:00Z', '2026-09-12T02:25:00Z', ?1
+            )",
+                [&case.case_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO drive_erasure_records (
+                record_id, operation_id, actor_id, physical_device_id, display_name, serial_number,
+                media_type, capacity_bytes, sector_size, device_snapshot_json, capabilities_json,
+                sanitization_method, execution_mode, verification_strategy, verification_outcome,
+                status, bytes_processed, elapsed_seconds, started_at, completed_at, case_id
+            ) VALUES (
+                'era-drv-q1', 'op-drv-q1', 'detective_miller', '\\\\.\\PhysicalDrive3', 'SanDisk Ultra',
+                'SANDISK-9', 'USB', 32000000000, 512, '{}', '{}',
+                'NistClearSinglePassZeros', 'Simulation', 'FullDeviceReadVerification',
+                'Verified', 'Completed', 32000000000, 20.0, '2026-09-12T03:00:00Z', '2026-09-12T03:10:00Z', ?1
+            )",
+                [&case.case_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO file_erasure_records (
+                record_id, operation_id, actor_id, target_path, canonical_path, scope,
+                sanitization_method, status, verification_outcome, bytes_processed,
+                total_files, files_sanitized, files_failed, directories_removed,
+                pre_metadata_json, limitations, started_at, completed_at, case_id
+            ) VALUES (
+                'era-file-q1', 'op-file-q1', 'detective_miller', 'C:\\temp\\secret.txt', 'C:\\temp\\secret.txt',
+                'File', 'LogicalFileShred', 'Completed', 'Verified', 1024,
+                1, 1, 0, 0,
+                '{}', '{}', '2026-09-12T04:00:00Z', '2026-09-12T04:01:00Z', ?1
+            )",
+                [&case.case_id],
+            )?;
+
+            Ok(())
+        })
+        .unwrap();
+
+    // Query acquisitions
+    let acqs = service
+        .list_case_acquisitions(&case.case_id)
+        .expect("List acquisitions");
+    assert_eq!(acqs.len(), 1);
+    assert_eq!(acqs[0].acquisition_id, "acq-q-1");
+    assert_eq!(acqs[0].source_display_name, "Seagate Barracuda");
+
+    // Query recoveries
+    let recs = service
+        .list_case_recoveries(&case.case_id)
+        .expect("List recoveries");
+    assert_eq!(recs.len(), 1);
+    assert_eq!(recs[0].job_id, "rec-q-1");
+    assert_eq!(recs[0].files_recovered, 15);
+
+    // Query erasures (both drive and file)
+    let erasures = service
+        .list_case_erasures(&case.case_id)
+        .expect("List erasures");
+    assert_eq!(erasures.len(), 2);
+    let drv = erasures
+        .iter()
+        .find(|e| e.erasure_type == "Drive")
+        .expect("Drive erasure found");
+    assert_eq!(drv.target_identifier, "SanDisk Ultra");
+    let fil = erasures
+        .iter()
+        .find(|e| e.erasure_type == "File")
+        .expect("File erasure found");
+    assert_eq!(fil.target_identifier, "C:\\temp\\secret.txt");
+}
+
+

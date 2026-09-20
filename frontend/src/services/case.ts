@@ -13,6 +13,9 @@ import {
   UpdateCaseRequest,
   AuditEvent,
   AuditChainVerification,
+  CaseAcquisitionItem,
+  CaseRecoveryItem,
+  CaseErasureItem,
 } from '../types/case';
 
 function isTauriEnvironment(): boolean {
@@ -489,4 +492,37 @@ export async function clearActiveCase(): Promise<void> {
     return;
   }
   mockActiveCase = null;
+}
+
+export async function reopenCase(sessionToken: string, caseId: string): Promise<Case> {
+  if (isTauriEnvironment()) {
+    return await invoke<Case>('reopen_case', { sessionToken, caseId });
+  }
+  const found = mockCases.find((c) => c.case_id === caseId);
+  if (!found) throw new Error(`Case ${caseId} not found`);
+  found.status = 'in_progress';
+  found.closed_at = null;
+  found.updated_at = new Date().toISOString();
+  return found;
+}
+
+export async function listCaseAcquisitions(caseId: string): Promise<CaseAcquisitionItem[]> {
+  if (isTauriEnvironment()) {
+    return await invoke<CaseAcquisitionItem[]>('list_case_acquisitions', { caseId });
+  }
+  return [];
+}
+
+export async function listCaseRecoveries(caseId: string): Promise<CaseRecoveryItem[]> {
+  if (isTauriEnvironment()) {
+    return await invoke<CaseRecoveryItem[]>('list_case_recoveries', { caseId });
+  }
+  return [];
+}
+
+export async function listCaseErasures(caseId: string): Promise<CaseErasureItem[]> {
+  if (isTauriEnvironment()) {
+    return await invoke<CaseErasureItem[]>('list_case_erasures', { caseId });
+  }
+  return [];
 }

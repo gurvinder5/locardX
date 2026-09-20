@@ -13,6 +13,7 @@ pub struct CreateRecoveryPlanRequest {
     pub artifact: AcquisitionArtifact,
     pub options: RecoveryOptions,
     pub session_token: Option<String>,
+    pub case_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -20,6 +21,7 @@ pub struct StartRecoveryRequest {
     pub plan: RecoveryPlan,
     pub session_token: Option<String>,
     pub operation_id: Option<String>,
+    pub case_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,10 +63,10 @@ pub async fn create_recovery_plan(
     state: State<'_, AppState>,
     request: CreateRecoveryPlanRequest,
 ) -> Result<RecoveryPlan, SafeErrorResponse> {
-    // Active Case Policy: Fail-closed if no active case or if case is closed
+    // Case Policy: Fail-closed if no active case or if specified/active case is closed
     state
         .case_service
-        .require_active_case()
+        .validate_case_for_operation(request.case_id.as_deref())
         .map_err(|e| SafeErrorResponse::from(&e))?;
 
     let actor_id = request
@@ -91,12 +93,12 @@ pub async fn start_recovery(
     state: State<'_, AppState>,
     request: StartRecoveryRequest,
 ) -> Result<RecoveryResult, SafeErrorResponse> {
-    // Active Case Policy: Fail-closed if no active case or if case is closed
-    let active_case = state
+    // Case Policy: Fail-closed if no active case or if specified/active case is closed
+    let case = state
         .case_service
-        .require_active_case()
+        .validate_case_for_operation(request.case_id.as_deref())
         .map_err(|e| SafeErrorResponse::from(&e))?;
-    let case_id = active_case.case_id.clone();
+    let case_id = case.case_id.clone();
 
     let actor_id = request
         .session_token
@@ -107,9 +109,15 @@ pub async fn start_recovery(
     let recovery_svc = state.recovery.clone();
     let op_id = request.operation_id.clone();
     let actor_id_cloned = actor_id.clone();
+    let case_id_cloned = case_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        recovery_svc.execute_recovery_with_operation_id(&request.plan, actor_id_cloned.as_deref(), op_id.as_deref())
+        recovery_svc.execute_recovery_with_case(
+            &request.plan,
+            actor_id_cloned.as_deref(),
+            op_id.as_deref(),
+            Some(&case_id_cloned),
+        )
     })
     .await
     .map_err(|e| SafeErrorResponse {

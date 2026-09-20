@@ -25,6 +25,7 @@ pub struct PlanDriveEraseRequest {
     pub requested_method: Option<String>,
     pub execution_mode: Option<ExecutionMode>,
     pub session_token: Option<String>,
+    pub case_id: Option<String>,
 }
 
 /// Request payload to execute simulated drive sanitization.
@@ -36,6 +37,7 @@ pub struct ExecuteDriveEraseSimulationRequest {
     pub typed_confirmation: String,
     pub warning_acknowledged: bool,
     pub session_token: String,
+    pub case_id: Option<String>,
 }
 
 // ==========================================
@@ -46,6 +48,12 @@ pub async fn plan_drive_erasure_handler(
     state: &AppState,
     request: PlanDriveEraseRequest,
 ) -> Result<DriveErasePlan, SafeErrorResponse> {
+    // Validate optional case or authorized standalone execution
+    let _ = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     let actor_id = if let Some(tok) = &request.session_token {
         state.auth.get_current_user(tok).ok().map(|u| u.username)
     } else {
@@ -70,7 +78,12 @@ pub async fn execute_drive_erasure_simulation_handler(
     state: &AppState,
     request: ExecuteDriveEraseSimulationRequest,
 ) -> Result<DriveEraseResult, SafeErrorResponse> {
-    state
+    let case_opt = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    let result = state
         .drive_eraser
         .execute_drive_erasure_simulation(
             &request.plan_id,
@@ -84,7 +97,49 @@ pub async fn execute_drive_erasure_simulation_handler(
             None,
         )
         .await
-        .map_err(|e| SafeErrorResponse::from(&e))
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    if let Some(case) = &case_opt {
+        let _ = state.db.with_conn(|conn| {
+            let _ = conn.execute(
+                "UPDATE drive_erasure_records SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            let _ = conn.execute(
+                "UPDATE operations SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            Ok(())
+        });
+
+        let user = state
+            .auth
+            .get_current_user(&request.session_token)
+            .unwrap_or_else(|_| locardx_auth::PublicUser {
+                user_id: "sys-operator".to_string(),
+                username: "operator".to_string(),
+                role: locardx_auth::UserRole::Operator,
+                display_name: Some("Forensic Operator".to_string()),
+                enabled: true,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                last_login_at: None,
+                metadata_json: "{}".to_string(),
+            });
+
+        let _ = state.case_service.associate_operation(
+            &case.case_id,
+            &request.operation_id,
+            "DriveErasure",
+            &user,
+            Some(&format!(
+                "Drive sanitization ({}) on {}",
+                result.method, result.display_name
+            )),
+        );
+    }
+
+    Ok(result)
 }
 
 pub fn get_drive_capabilities_handler(
@@ -141,9 +196,14 @@ pub async fn execute_drive_erasure_hardware_handler(
     state: &AppState,
     request: ExecuteDriveEraseSimulationRequest,
 ) -> Result<DriveEraseResult, SafeErrorResponse> {
+    let case_opt = state
+        .case_service
+        .validate_optional_case_or_standalone(request.case_id.as_deref())
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
     // Passes through RealHardwareExecutionGate and RealHardwareSanitizer
     // which in Step 10B.1 strictly rejects execution with RealHardwareExecutionNotEnabled
-    state
+    let result = state
         .drive_eraser
         .execute_drive_erasure_with_gate(
             &request.plan_id,
@@ -157,7 +217,49 @@ pub async fn execute_drive_erasure_hardware_handler(
             None,
         )
         .await
-        .map_err(|e| SafeErrorResponse::from(&e))
+        .map_err(|e| SafeErrorResponse::from(&e))?;
+
+    if let Some(case) = &case_opt {
+        let _ = state.db.with_conn(|conn| {
+            let _ = conn.execute(
+                "UPDATE drive_erasure_records SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            let _ = conn.execute(
+                "UPDATE operations SET case_id = ?1 WHERE operation_id = ?2",
+                rusqlite::params![case.case_id, request.operation_id],
+            );
+            Ok(())
+        });
+
+        let user = state
+            .auth
+            .get_current_user(&request.session_token)
+            .unwrap_or_else(|_| locardx_auth::PublicUser {
+                user_id: "sys-operator".to_string(),
+                username: "operator".to_string(),
+                role: locardx_auth::UserRole::Operator,
+                display_name: Some("Forensic Operator".to_string()),
+                enabled: true,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                last_login_at: None,
+                metadata_json: "{}".to_string(),
+            });
+
+        let _ = state.case_service.associate_operation(
+            &case.case_id,
+            &request.operation_id,
+            "DriveErasure",
+            &user,
+            Some(&format!(
+                "Drive sanitization ({}) on {}",
+                result.method, result.display_name
+            )),
+        );
+    }
+
+    Ok(result)
 }
 
 pub fn get_drive_erasure_result_handler(

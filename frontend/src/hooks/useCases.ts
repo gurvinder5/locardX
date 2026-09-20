@@ -10,6 +10,9 @@ import {
   CreateCaseRequest,
   RecordCustodyRequest,
   UpdateCaseRequest,
+  CaseAcquisitionItem,
+  CaseRecoveryItem,
+  CaseErasureItem,
 } from '../types/case';
 import * as caseService from '../services/case';
 import { useAuthStore } from '../stores/authStore';
@@ -23,6 +26,9 @@ export function useCases() {
   const [evidence, setEvidence] = useState<CaseEvidence[]>([]);
   const [timeline, setTimeline] = useState<CaseTimelineItem[]>([]);
   const [reports, setReports] = useState<CaseReportSummary[]>([]);
+  const [acquisitions, setAcquisitions] = useState<CaseAcquisitionItem[]>([]);
+  const [recoveries, setRecoveries] = useState<CaseRecoveryItem[]>([]);
+  const [erasures, setErasures] = useState<CaseErasureItem[]>([]);
   const [activeReport, setActiveReport] = useState<CaseForensicReport | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,18 +53,24 @@ export function useCases() {
       const c = await caseService.getCase(caseId);
       setActiveCase(c);
       if (c) {
-        const [summ, ops, ev, tl, reps] = await Promise.all([
+        const [summ, ops, ev, tl, reps, acqs, recs, eras] = await Promise.all([
           caseService.getCaseSummary(caseId).catch(() => null),
           caseService.listCaseOperations(caseId).catch(() => []),
           caseService.listCaseEvidence(caseId).catch(() => []),
           caseService.getCaseTimeline(caseId).catch(() => []),
           caseService.listCaseReports(caseId).catch(() => []),
+          caseService.listCaseAcquisitions(caseId).catch(() => []),
+          caseService.listCaseRecoveries(caseId).catch(() => []),
+          caseService.listCaseErasures(caseId).catch(() => []),
         ]);
         setSummary(summ);
         setOperations(ops);
         setEvidence(ev);
         setTimeline(tl);
         setReports(reps);
+        setAcquisitions(acqs);
+        setRecoveries(recs);
+        setErasures(eras);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to load case details');
@@ -168,9 +180,60 @@ export function useCases() {
     return await caseService.verifyCaseReportIntegrity(report);
   }, []);
 
+  const reopenActiveCase = useCallback(
+    async (caseId: string): Promise<Case> => {
+      const token = sessionToken || '';
+      const reopened = await caseService.reopenCase(token, caseId);
+      setActiveCase(reopened);
+      await selectCase(caseId);
+      await loadCases();
+      return reopened;
+    },
+    [sessionToken, selectCase, loadCases]
+  );
+
+  const setAsActiveCase = useCallback(
+    async (caseId: string): Promise<Case> => {
+      const setCase = await caseService.setActiveCase(caseId);
+      await selectCase(caseId);
+      return setCase;
+    },
+    [selectCase]
+  );
+
+  const clearCurrentActiveCase = useCallback(
+    async (): Promise<void> => {
+      await caseService.clearActiveCase();
+      setActiveCase(null);
+      setSummary(null);
+      setOperations([]);
+      setEvidence([]);
+      setTimeline([]);
+      setReports([]);
+      setAcquisitions([]);
+      setRecoveries([]);
+      setErasures([]);
+    },
+    []
+  );
+
   useEffect(() => {
     loadCases();
   }, [loadCases]);
+
+  useEffect(() => {
+    async function initActiveCase() {
+      try {
+        const active = await caseService.getActiveCase();
+        if (active) {
+          await selectCase(active.case_id);
+        }
+      } catch (err) {
+        console.error('Failed to restore active case:', err);
+      }
+    }
+    initActiveCase();
+  }, [selectCase]);
 
   return {
     cases,
@@ -180,6 +243,9 @@ export function useCases() {
     evidence,
     timeline,
     reports,
+    acquisitions,
+    recoveries,
+    erasures,
     activeReport,
     loading,
     error,
@@ -188,6 +254,9 @@ export function useCases() {
     createNewCase,
     modifyCase,
     changeCaseStatus,
+    reopenActiveCase,
+    setAsActiveCase,
+    clearCurrentActiveCase,
     linkOperation,
     linkEvidence,
     addCustodyRecord,

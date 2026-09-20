@@ -1,11 +1,11 @@
 use crate::models::{
-    AddEvidenceRequest, Case, CaseEvidence, CaseOperation, CaseStatus, CaseSummary,
-    CaseTimelineItem, CreateCaseRequest, CustodyEvent, CustodyEventType, EvidenceType,
-    RecordCustodyRequest, UpdateCaseRequest,
+    AddEvidenceRequest, Case, CaseAcquisitionItem, CaseErasureItem, CaseEvidence, CaseOperation,
+    CaseRecoveryItem, CaseStatus, CaseSummary, CaseTimelineItem, CreateCaseRequest, CustodyEvent,
+    CustodyEventType, EvidenceType, RecordCustodyRequest, UpdateCaseRequest,
 };
 use chrono::Utc;
 use locardx_audit::AuditService;
-use locardx_auth::PublicUser;
+use locardx_auth::{PublicUser, UserRole};
 use locardx_common::LocardError;
 use locardx_database::Database;
 use locardx_reporting::forensic_report::{
@@ -35,11 +35,25 @@ impl CaseService {
         audit: Arc<AuditService>,
         reporting: Arc<ReportingService>,
     ) -> Self {
+        let initial_active: Option<String> = db
+            .with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT value FROM app_metadata WHERE key = 'active_case_id' LIMIT 1",
+                )?;
+                let mut rows = stmt.query([])?;
+                if let Some(row) = rows.next()? {
+                    Ok(Some(row.get(0)?))
+                } else {
+                    Ok(None)
+                }
+            })
+            .unwrap_or(None);
+
         Self {
             db,
             audit,
             reporting,
-            active_case_id: Arc::new(RwLock::new(None)),
+            active_case_id: Arc::new(RwLock::new(initial_active)),
         }
     }
 
@@ -55,11 +69,20 @@ impl CaseService {
         &self.reporting
     }
 
-    /// Sets the active investigation case in application/backend state.
+    /// Sets the active investigation case in application/backend state and persists to SQLite.
     pub fn set_active_case(&self, case_id: &str) -> Result<Case, LocardError> {
         let case = self
             .get_case(case_id)?
             .ok_or_else(|| LocardError::Operation(format!("Case '{}' not found", case_id)))?;
+
+        // Persist to SQLite metadata
+        self.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('active_case_id', ?1, datetime('now'))",
+                params![case_id],
+            )?;
+            Ok(())
+        })?;
 
         let mut lock = self.active_case_id.write().map_err(|e| {
             LocardError::Operation(format!("Failed to acquire active case lock: {}", e))
@@ -79,7 +102,7 @@ impl CaseService {
         Ok(case)
     }
 
-    /// Retrieves the active investigation case, if one is currently selected.
+    /// Retrieves the active investigation case, loading from persistent storage if necessary.
     pub fn get_active_case(&self) -> Result<Option<Case>, LocardError> {
         let id_opt = {
             let lock = self.active_case_id.read().map_err(|e| {
@@ -87,18 +110,53 @@ impl CaseService {
             })?;
             lock.clone()
         };
-        if let Some(id) = id_opt {
-            self.get_case(&id)
+
+        let target_id = if let Some(id) = id_opt {
+            Some(id)
+        } else {
+            // Check app_metadata if in-memory cache is None
+            let meta_id: Option<String> = self.db.with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT value FROM app_metadata WHERE key = 'active_case_id' LIMIT 1",
+                )?;
+                let mut rows = stmt.query([])?;
+                if let Some(row) = rows.next()? {
+                    Ok(Some(row.get(0)?))
+                } else {
+                    Ok(None)
+                }
+            })?;
+            if let Some(ref mid) = meta_id {
+                if let Ok(mut lock) = self.active_case_id.write() {
+                    *lock = Some(mid.clone());
+                }
+            }
+            meta_id
+        };
+
+        if let Some(id) = target_id {
+            match self.get_case(&id)? {
+                Some(case) => Ok(Some(case)),
+                None => {
+                    // Stored active case no longer exists, clean up stale reference
+                    self.clear_active_case();
+                    Ok(None)
+                }
+            }
         } else {
             Ok(None)
         }
     }
 
-    /// Clears the active investigation case in application/backend state.
+    /// Clears the active investigation case in application/backend state and removes from SQLite.
     pub fn clear_active_case(&self) {
         if let Ok(mut lock) = self.active_case_id.write() {
             *lock = None;
         }
+        let _ = self.db.with_conn(|conn| {
+            conn.execute("DELETE FROM app_metadata WHERE key = 'active_case_id'", [])?;
+            Ok(())
+        });
         let _ = self.audit.log_structured_event(
             "ACTIVE_CASE_CLEARED",
             None,
@@ -124,6 +182,119 @@ impl CaseService {
             )));
         }
         Ok(active)
+    }
+
+    /// Validates that a case exists and is currently in an active lifecycle state (Open or InProgress).
+    /// If `case_id` is provided, validates that specific case.
+    /// If `case_id` is None, validates the active case.
+    /// Fails closed with appropriate security error if case does not exist or is closed.
+    pub fn validate_case_for_operation(&self, case_id: Option<&str>) -> Result<Case, LocardError> {
+        let case = match case_id {
+            Some(id) if !id.trim().is_empty() => {
+                self.get_case(id.trim())?.ok_or_else(|| {
+                    LocardError::Operation(format!(
+                        "CASE_NOT_FOUND: Investigation case '{}' does not exist.",
+                        id
+                    ))
+                })?
+            }
+            _ => self.require_active_case()?,
+        };
+
+        if case.status == CaseStatus::Completed || case.status == CaseStatus::Archived {
+            return Err(LocardError::SecurityViolation(format!(
+                "CASE_CLOSED: Case '{}' ({}) is closed ({}). Cannot start new operations on a closed case.",
+                case.title, case.case_reference, case.status
+            )));
+        }
+
+        Ok(case)
+    }
+
+    /// Validates case context for operations that permit either case association or authorized standalone execution.
+    /// If an explicit `case_id` is passed:
+    ///   - If "standalone" or empty: returns `Ok(None)` (explicit standalone).
+    ///   - Otherwise, strictly validates the case exists and is open; rejects if closed or non-existent!
+    /// If `case_id` is None:
+    ///   - Checks if an active case is selected.
+    ///   - If active case is selected and open: returns `Ok(Some(active_case))`.
+    ///   - If active case is selected and closed: rejects with `CASE_CLOSED`.
+    ///   - If no active case is selected: returns `Ok(None)` (standalone execution).
+    pub fn validate_optional_case_or_standalone(
+        &self,
+        case_id: Option<&str>,
+    ) -> Result<Option<Case>, LocardError> {
+        match case_id {
+            Some(id) => {
+                let trimmed = id.trim();
+                if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("standalone") {
+                    Ok(None)
+                } else {
+                    let case = self.get_case(trimmed)?.ok_or_else(|| {
+                        LocardError::Operation(format!(
+                            "CASE_NOT_FOUND: Specified investigation case '{}' does not exist.",
+                            trimmed
+                        ))
+                    })?;
+                    if case.status == CaseStatus::Completed || case.status == CaseStatus::Archived {
+                        return Err(LocardError::SecurityViolation(format!(
+                            "CASE_CLOSED: Specified case '{}' ({}) is closed ({}). Cannot associate operations with a closed case.",
+                            case.title, case.case_reference, case.status
+                        )));
+                    }
+                    Ok(Some(case))
+                }
+            }
+            None => {
+                if let Some(active) = self.get_active_case()? {
+                    if active.status == CaseStatus::Completed || active.status == CaseStatus::Archived {
+                        return Err(LocardError::SecurityViolation(format!(
+                            "CASE_CLOSED: Active case '{}' ({}) is closed ({}). Cannot start new operations under a closed case.",
+                            active.title, active.case_reference, active.status
+                        )));
+                    }
+                    Ok(Some(active))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    /// Reopens a previously completed or archived case, subject to RBAC authorization.
+    /// Strictly requires Administrator or Investigator privileges.
+    pub fn reopen_case(&self, case_id: &str, actor: &PublicUser) -> Result<Case, LocardError> {
+        if actor.role != UserRole::Administrator && actor.role != UserRole::Investigator {
+            return Err(LocardError::SecurityViolation(
+                "UNAUTHORIZED: Only an Administrator or Investigator is authorized to reopen a closed investigation case."
+                    .to_string(),
+            ));
+        }
+
+        let existing = self
+            .get_case(case_id)?
+            .ok_or_else(|| LocardError::Operation(format!("Case '{}' not found", case_id)))?;
+
+        if existing.status == CaseStatus::Open || existing.status == CaseStatus::InProgress {
+            return Err(LocardError::Operation(format!(
+                "Case '{}' ({}) is already active (status: {}).",
+                existing.title, existing.case_reference, existing.status
+            )));
+        }
+
+        let updated = self.update_case_status(case_id, CaseStatus::InProgress, actor)?;
+
+        let _ = self.audit.log_structured_event(
+            "CASE_REOPENED",
+            Some(&actor.username),
+            Some(case_id),
+            &format!(
+                "Case '{}' ({}) successfully reopened by authorized investigator '{}'",
+                updated.title, updated.case_reference, actor.username
+            ),
+        );
+
+        Ok(updated)
     }
 
     /// Creates a new investigation case, recording an audit event and initial custody record.
@@ -404,16 +575,44 @@ impl CaseService {
 
         let now = Utc::now().to_rfc3339();
         let previous_status = existing.status;
-        existing.status = new_status;
-        existing.updated_at = now.clone();
 
+        // Safety check: Cannot close or archive a case while operations are actively running
         if matches!(new_status, CaseStatus::Completed | CaseStatus::Archived) {
+            let has_running_ops: bool = self.db.with_conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT COUNT(*) FROM operations
+                     WHERE (case_id = ?1 OR operation_id IN (SELECT operation_id FROM case_operations WHERE case_id = ?1))
+                       AND current_state IN ('Created', 'Queued', 'Running', 'Cancelling')",
+                )?;
+                let count: i64 = stmt.query_row(params![case_id], |row| row.get(0))?;
+                Ok(count > 0)
+            })?;
+
+            if has_running_ops {
+                return Err(LocardError::Operation(format!(
+                    "Cannot close case '{}': There are active or running operations associated with this case. Wait for operations to terminate or cancel them before closing.",
+                    case_id
+                )));
+            }
+
             if existing.closed_at.is_none() {
                 existing.closed_at = Some(now.clone());
             }
+        } else if matches!(previous_status, CaseStatus::Completed | CaseStatus::Archived) {
+            // Reopening workflow: require Administrator or Investigator
+            if actor.role != UserRole::Administrator && actor.role != UserRole::Investigator {
+                return Err(LocardError::SecurityViolation(
+                    "UNAUTHORIZED: Only an Administrator or Investigator is authorized to reopen a closed investigation case."
+                        .to_string(),
+                ));
+            }
+            existing.closed_at = None;
         } else {
             existing.closed_at = None;
         }
+
+        existing.status = new_status;
+        existing.updated_at = now.clone();
 
         self.db.with_conn(|conn| {
             conn.execute(
@@ -462,8 +661,8 @@ impl CaseService {
         Ok(existing)
     }
 
-    /// Associates an operation with an investigation case.
-    /// Auto-links evidential artifacts produced by the operation.
+    /// Associates an operation with an investigation case idempotently.
+    /// Auto-links evidential artifacts produced by the operation without creating duplicates.
     pub fn associate_operation(
         &self,
         case_id: &str,
@@ -475,6 +674,32 @@ impl CaseService {
         let case = self
             .get_case(case_id)?
             .ok_or_else(|| LocardError::Operation(format!("Case '{}' not found", case_id)))?;
+
+        // Check if operation is already associated to prevent duplicate primary key errors
+        let existing_op = self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, case_id, operation_id, operation_type, associated_by, associated_at, notes
+                 FROM case_operations WHERE case_id = ?1 AND operation_id = ?2 LIMIT 1",
+            )?;
+            let mut rows = stmt.query(params![case_id, operation_id])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(CaseOperation {
+                    id: row.get(0)?,
+                    case_id: row.get(1)?,
+                    operation_id: row.get(2)?,
+                    operation_type: row.get(3)?,
+                    associated_by: row.get(4)?,
+                    associated_at: row.get(5)?,
+                    notes: row.get(6)?,
+                }))
+            } else {
+                Ok(None)
+            }
+        })?;
+
+        if let Some(op) = existing_op {
+            return Ok(op);
+        }
 
         let assoc_id = format!("c-op-{}", Uuid::new_v4());
         let now = Utc::now().to_rfc3339();
@@ -491,7 +716,7 @@ impl CaseService {
 
         self.db.with_conn(|conn| {
             conn.execute(
-                "INSERT INTO case_operations (id, case_id, operation_id, operation_type, associated_by, associated_at, notes)
+                "INSERT OR IGNORE INTO case_operations (id, case_id, operation_id, operation_type, associated_by, associated_at, notes)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     case_op.id,
@@ -516,7 +741,7 @@ impl CaseService {
             ),
         )?;
 
-        // Auto-discover and associate evidence from completed operations
+        // Auto-discover and associate evidence from completed operations (deduplicating)
         self.auto_link_operation_evidence(
             case_id,
             operation_id,
@@ -528,7 +753,7 @@ impl CaseService {
         Ok(case_op)
     }
 
-    /// Internal helper to auto-link acquisition and recovery artifacts.
+    /// Internal helper to auto-link acquisition, recovery, and erasure artifacts.
     fn auto_link_operation_evidence(
         &self,
         case_id: &str,
@@ -539,7 +764,6 @@ impl CaseService {
     ) -> Result<(), LocardError> {
         match op_type {
             "ForensicAcquisition" => {
-                // Check if acquisition record exists
                 let acq_info = self.db.with_conn(|conn| {
                     let mut stmt = conn.prepare(
                         "SELECT destination_path, source_display_name, image_sha256, image_size_bytes
@@ -559,32 +783,43 @@ impl CaseService {
                 })?;
 
                 if let Some((path, name, sha256, size)) = acq_info {
-                    let ev_req = AddEvidenceRequest {
-                        evidence_type: EvidenceType::AcquisitionImage,
-                        identifier: path.clone(),
-                        label: format!("Bitstream DD Image - {}", name),
-                        sha256: Some(sha256.clone()),
-                        size_bytes: Some(size),
-                        notes: Some(format!("Acquired via operation '{}'", operation_id)),
-                    };
-                    let ev = self.add_case_evidence(case_id, ev_req, actor)?;
-                    let _ = self.record_custody_internal(
-                        case_id,
-                        Some(&ev.evidence_id),
-                        CustodyEventType::EvidenceAcquired,
-                        &actor.username,
-                        "Forensic image acquired and linked",
-                        &format!("Image '{}' (SHA-256: {})", path, sha256),
-                        None,
-                        Some(audit_hash),
-                    );
+                    // Check if already linked to prevent duplicate evidence rows
+                    let already_exists: bool = self.db.with_conn(|conn| {
+                        let mut stmt = conn.prepare(
+                            "SELECT COUNT(*) FROM case_evidence WHERE case_id = ?1 AND identifier = ?2",
+                        )?;
+                        let count: i64 = stmt.query_row(params![case_id, &path], |r| r.get(0))?;
+                        Ok(count > 0)
+                    })?;
+
+                    if !already_exists {
+                        let ev_req = AddEvidenceRequest {
+                            evidence_type: EvidenceType::AcquisitionImage,
+                            identifier: path.clone(),
+                            label: format!("Bitstream DD Image - {}", name),
+                            sha256: Some(sha256.clone()),
+                            size_bytes: Some(size),
+                            notes: Some(format!("Acquired via operation '{}'", operation_id)),
+                        };
+                        let ev = self.add_case_evidence(case_id, ev_req, actor)?;
+                        let _ = self.record_custody_internal(
+                            case_id,
+                            Some(&ev.evidence_id),
+                            CustodyEventType::EvidenceAcquired,
+                            &actor.username,
+                            "Forensic image acquired and linked",
+                            &format!("Image '{}' (SHA-256: {})", path, sha256),
+                            None,
+                            Some(audit_hash),
+                        );
+                    }
                 }
             }
             "Recovery" => {
                 let rec_info = self.db.with_conn(|conn| {
                     let mut stmt = conn.prepare(
                         "SELECT job_id, source_image_path, files_recovered
-                         FROM recovery_jobs WHERE operation_id = ?1 LIMIT 1",
+                         FROM recovery_jobs WHERE operation_id = ?1 OR job_id = ?1 LIMIT 1",
                     )?;
                     let mut rows = stmt.query(params![operation_id])?;
                     if let Some(row) = rows.next()? {
@@ -599,43 +834,135 @@ impl CaseService {
                 })?;
 
                 if let Some((job_id, path, files)) = rec_info {
-                    let ev_req = AddEvidenceRequest {
-                        evidence_type: EvidenceType::RecoveredDataset,
-                        identifier: job_id.clone(),
-                        label: format!("Carved Files Dataset ({} files)", files),
-                        sha256: None,
-                        size_bytes: None,
-                        notes: Some(format!("Recovered from source '{}'", path)),
-                    };
-                    let ev = self.add_case_evidence(case_id, ev_req, actor)?;
+                    let already_exists: bool = self.db.with_conn(|conn| {
+                        let mut stmt = conn.prepare(
+                            "SELECT COUNT(*) FROM case_evidence WHERE case_id = ?1 AND identifier = ?2",
+                        )?;
+                        let count: i64 = stmt.query_row(params![case_id, &job_id], |r| r.get(0))?;
+                        Ok(count > 0)
+                    })?;
+
+                    if !already_exists {
+                        let ev_req = AddEvidenceRequest {
+                            evidence_type: EvidenceType::RecoveredDataset,
+                            identifier: job_id.clone(),
+                            label: format!("Carved Files Dataset ({} files)", files),
+                            sha256: None,
+                            size_bytes: None,
+                            notes: Some(format!("Recovered from source '{}'", path)),
+                        };
+                        let ev = self.add_case_evidence(case_id, ev_req, actor)?;
+                        let _ = self.record_custody_internal(
+                            case_id,
+                            Some(&ev.evidence_id),
+                            CustodyEventType::EvidenceAnalyzed,
+                            &actor.username,
+                            "Evidence analyzed via recovery engine",
+                            &format!("Job '{}' recovered {} files from '{}'", job_id, files, path),
+                            None,
+                            Some(audit_hash),
+                        );
+                    }
+                }
+            }
+            "DriveErasure" => {
+                let de_info = self.db.with_conn(|conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT physical_device_id, display_name, sanitization_method, verification_outcome
+                         FROM drive_erasure_records WHERE operation_id = ?1 LIMIT 1",
+                    )?;
+                    let mut rows = stmt.query(params![operation_id])?;
+                    if let Some(row) = rows.next()? {
+                        Ok(Some((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        )))
+                    } else {
+                        Ok(None)
+                    }
+                })?;
+
+                if let Some((dev_id, display_name, method, outcome)) = de_info {
                     let _ = self.record_custody_internal(
                         case_id,
-                        Some(&ev.evidence_id),
+                        None,
                         CustodyEventType::EvidenceAnalyzed,
                         &actor.username,
-                        "Evidence analyzed via recovery engine",
-                        &format!("Job '{}' recovered {} files from '{}'", job_id, files, path),
+                        "Drive sanitization operation linked",
+                        &format!(
+                            "Physical device '{}' ({}) sanitized using {} (outcome: {})",
+                            display_name, dev_id, method, outcome
+                        ),
+                        None,
+                        Some(audit_hash),
+                    );
+                } else {
+                    let _ = self.record_custody_internal(
+                        case_id,
+                        None,
+                        CustodyEventType::EvidenceAnalyzed,
+                        &actor.username,
+                        "Drive erasure linked to case",
+                        &format!("Sanitization operation '{}' linked to case", operation_id),
                         None,
                         Some(audit_hash),
                     );
                 }
             }
-            "DriveErasure" => {
-                let _ = self.record_custody_internal(
-                    case_id,
-                    None,
-                    CustodyEventType::EvidenceAnalyzed,
-                    &actor.username,
-                    "Drive erasure linked to case",
-                    &format!("Sanitization operation '{}' linked to case", operation_id),
-                    None,
-                    Some(audit_hash),
-                );
+            "FileErasure" => {
+                let fe_info = self.db.with_conn(|conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT target_path, scope, sanitization_method, verification_outcome, files_sanitized
+                         FROM file_erasure_records WHERE operation_id = ?1 LIMIT 1",
+                    )?;
+                    let mut rows = stmt.query(params![operation_id])?;
+                    if let Some(row) = rows.next()? {
+                        Ok(Some((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, usize>(4)?,
+                        )))
+                    } else {
+                        Ok(None)
+                    }
+                })?;
+
+                if let Some((target_path, scope, method, outcome, count)) = fe_info {
+                    let _ = self.record_custody_internal(
+                        case_id,
+                        None,
+                        CustodyEventType::EvidenceAnalyzed,
+                        &actor.username,
+                        "File sanitization operation linked",
+                        &format!(
+                            "Target '{}' ({}, {} files) sanitized using {} (outcome: {})",
+                            target_path, scope, count, method, outcome
+                        ),
+                        None,
+                        Some(audit_hash),
+                    );
+                } else {
+                    let _ = self.record_custody_internal(
+                        case_id,
+                        None,
+                        CustodyEventType::EvidenceAnalyzed,
+                        &actor.username,
+                        "File erasure linked to case",
+                        &format!("Sanitization operation '{}' linked to case", operation_id),
+                        None,
+                        Some(audit_hash),
+                    );
+                }
             }
             _ => {}
         }
         Ok(())
     }
+
 
     /// Lists all operations associated with a case.
     pub fn list_case_operations(&self, case_id: &str) -> Result<Vec<CaseOperation>, LocardError> {
@@ -659,6 +986,124 @@ impl CaseService {
             }
             Ok(ops)
         })
+    }
+
+    /// Lists all forensic bitstream acquisitions associated with a case.
+    pub fn list_case_acquisitions(&self, case_id: &str) -> Result<Vec<CaseAcquisitionItem>, LocardError> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT acquisition_id, operation_id, source_device_id, source_display_name,
+                        destination_path, image_format, image_size_bytes, image_sha256, status, completed_at
+                 FROM acquisition_records
+                 WHERE case_id = ?1 OR operation_id IN (SELECT operation_id FROM case_operations WHERE case_id = ?1)
+                 ORDER BY completed_at DESC",
+            )?;
+            let mut rows = stmt.query(params![case_id])?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next()? {
+                let size_raw: i64 = row.get(6)?;
+                items.push(CaseAcquisitionItem {
+                    acquisition_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    source_device_id: row.get(2)?,
+                    source_display_name: row.get(3)?,
+                    destination_path: row.get(4)?,
+                    image_format: row.get(5)?,
+                    image_size_bytes: size_raw.max(0) as u64,
+                    image_sha256: row.get(7)?,
+                    status: row.get(8)?,
+                    completed_at: row.get(9)?,
+                });
+            }
+            Ok(items)
+        })
+    }
+
+    /// Lists all forensic recovery jobs associated with a case.
+    pub fn list_case_recoveries(&self, case_id: &str) -> Result<Vec<CaseRecoveryItem>, LocardError> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT job_id, operation_id, source_image_path, source_image_sha256,
+                        recovery_mode, status, files_recovered, completed_at
+                 FROM recovery_jobs
+                 WHERE case_id = ?1 OR operation_id IN (SELECT operation_id FROM case_operations WHERE case_id = ?1)
+                 ORDER BY completed_at DESC",
+            )?;
+            let mut rows = stmt.query(params![case_id])?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next()? {
+                let files_raw: i64 = row.get(6)?;
+                items.push(CaseRecoveryItem {
+                    job_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    source_image_path: row.get(2)?,
+                    source_image_sha256: row.get(3)?,
+                    recovery_mode: row.get(4)?,
+                    status: row.get(5)?,
+                    files_recovered: files_raw.max(0) as usize,
+                    completed_at: row.get(7)?,
+                });
+            }
+            Ok(items)
+        })
+    }
+
+    /// Lists all sanitization actions (drive and file erasures) associated with a case.
+    pub fn list_case_erasures(&self, case_id: &str) -> Result<Vec<CaseErasureItem>, LocardError> {
+        let mut items = Vec::new();
+
+        // Query drive erasures
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT record_id, operation_id, display_name, sanitization_method, status, verification_outcome, completed_at
+                 FROM drive_erasure_records
+                 WHERE case_id = ?1 OR operation_id IN (SELECT operation_id FROM case_operations WHERE case_id = ?1)
+                 ORDER BY completed_at DESC",
+            )?;
+            let mut rows = stmt.query(params![case_id])?;
+            while let Some(row) = rows.next()? {
+                items.push(CaseErasureItem {
+                    record_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    target_identifier: row.get(2)?,
+                    erasure_type: "Drive".to_string(),
+                    method: row.get(3)?,
+                    status: row.get(4)?,
+                    verification_outcome: row.get(5)?,
+                    completed_at: row.get(6)?,
+                });
+            }
+            Ok(())
+        })?;
+
+        // Query file erasures
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT record_id, operation_id, target_path, sanitization_method, status, verification_outcome, completed_at
+                 FROM file_erasure_records
+                 WHERE case_id = ?1 OR operation_id IN (SELECT operation_id FROM case_operations WHERE case_id = ?1)
+                 ORDER BY completed_at DESC",
+            )?;
+            let mut rows = stmt.query(params![case_id])?;
+            while let Some(row) = rows.next()? {
+                items.push(CaseErasureItem {
+                    record_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    target_identifier: row.get(2)?,
+                    erasure_type: "File".to_string(),
+                    method: row.get(3)?,
+                    status: row.get(4)?,
+                    verification_outcome: row.get(5)?,
+                    completed_at: row.get(6)?,
+                });
+            }
+            Ok(())
+        })?;
+
+        // Sort descending by completed_at
+        items.sort_by(|a, b| b.completed_at.cmp(&a.completed_at));
+
+        Ok(items)
     }
 
     /// Introduces an evidentiary item into a case.
@@ -964,7 +1409,7 @@ impl CaseService {
                         .unwrap_or(0);
                     recovered_files += count;
                 }
-                "DriveErasure" => era_count += 1,
+                "DriveErasure" | "FileErasure" => era_count += 1,
                 _ => {}
             }
         }
@@ -1054,7 +1499,7 @@ impl CaseService {
                     let mut stmt = conn.prepare(
                         "SELECT job_id, operation_id, acquisition_id, source_image_sha256, recovery_mode,
                                 status, files_recovered, candidates_evaluated, elapsed_seconds, audit_reference
-                         FROM recovery_jobs WHERE operation_id = ?1 LIMIT 1",
+                         FROM recovery_jobs WHERE operation_id = ?1 OR job_id = ?1 LIMIT 1",
                     )?;
                     let mut rows = stmt.query(params![op.operation_id])?;
                     if let Some(row) = rows.next()? {
@@ -1114,7 +1559,7 @@ impl CaseService {
             }
         }
 
-        // 3. Gather erasures
+        // 3. Gather erasures (Drive and File erasures)
         let mut erasures = Vec::new();
         for op in &ops {
             if op.operation_type == "DriveErasure" {
@@ -1148,6 +1593,38 @@ impl CaseService {
                             limitations: vec![],
                             audit_reference: primary_audit_ref,
                             completed_at: row.get(12)?,
+                        }))
+                    } else {
+                        Ok(None)
+                    }
+                })?;
+                if let Some(e) = era {
+                    erasures.push(e);
+                }
+            } else if op.operation_type == "FileErasure" {
+                let era = self.db.with_conn(|conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT operation_id, target_path, scope, sanitization_method,
+                                status, verification_outcome, completed_at
+                         FROM file_erasure_records WHERE operation_id = ?1 LIMIT 1",
+                    )?;
+                    let mut rows = stmt.query(params![op.operation_id])?;
+                    if let Some(row) = rows.next()? {
+                        Ok(Some(CaseErasureReportInfo {
+                            operation_id: row.get(0)?,
+                            plan_id: String::new(),
+                            physical_device_id: row.get(1)?,
+                            display_name: row.get(1)?,
+                            serial_number: None,
+                            method: row.get(3)?,
+                            execution_mode: "Filesystem".to_string(),
+                            status: row.get(4)?,
+                            verification_outcome: row.get(5)?,
+                            verification_strategy: "BlockAndMetadataValidation".to_string(),
+                            evidence_digest: None,
+                            limitations: vec![],
+                            audit_reference: "N/A".to_string(),
+                            completed_at: row.get(6)?,
                         }))
                     } else {
                         Ok(None)

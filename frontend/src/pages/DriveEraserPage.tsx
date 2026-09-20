@@ -44,6 +44,8 @@ import {
 } from '../services/driveEraser';
 import { requestDestructiveConfirmation } from '../services/safety';
 import { useAuthStore } from '../stores/authStore';
+import { useCaseStore } from '../stores/caseStore';
+import { ActiveCaseBanner } from '../components/case/ActiveCaseBanner';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -55,6 +57,8 @@ function formatBytes(bytes: number): string {
 
 export const DriveEraserPage: React.FC = () => {
   const sessionToken = useAuthStore((s) => s.sessionToken);
+  const { activeCase } = useCaseStore();
+  const [associateWithCase, setAssociateWithCase] = useState<boolean>(true);
 
   // Device Discovery & Mode Selection
   const [deviceSource, setDeviceSource] = useState<'real' | 'mock'>('real');
@@ -278,11 +282,13 @@ export const DriveEraserPage: React.FC = () => {
 
     try {
       setIsPlanning(true);
+      const targetCaseId = associateWithCase && activeCase ? activeCase.case_id : null;
       const planned = await planDriveErasure({
         target_device_id: target,
         requested_method: null,
         execution_mode: executionMode,
         session_token: sessionToken,
+        case_id: targetCaseId,
       });
       setPlan(planned);
     } catch (err: any) {
@@ -371,6 +377,8 @@ export const DriveEraserPage: React.FC = () => {
         confirmValue = `\\\\.\\${confirmValue}`;
       }
 
+      const targetCaseId = associateWithCase && activeCase ? activeCase.case_id : null;
+
       // Execute Sanitization via Tauri Backend API
       const res = isHardware
         ? await executeDriveErasureHardware({
@@ -380,6 +388,7 @@ export const DriveEraserPage: React.FC = () => {
             typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'hw-session',
+            case_id: targetCaseId,
           })
         : await executeDriveErasureSimulation({
             plan_id: plan.plan_id,
@@ -388,6 +397,7 @@ export const DriveEraserPage: React.FC = () => {
             typed_confirmation: confirmValue,
             warning_acknowledged: warningAcknowledged,
             session_token: sessionToken || 'sim-session',
+            case_id: targetCaseId,
           });
 
       if (pollTimer) {
@@ -514,6 +524,12 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
 
   return (
     <div className="space-y-6">
+      {/* Active Forensic Case Banner & Context */}
+      <ActiveCaseBanner
+        associateWithCase={associateWithCase}
+        onToggleAssociate={setAssociateWithCase}
+      />
+
       {/* Privilege Status Warning for Real Hardware */}
       {executionMode === 'RealHardware' && privilegeStatus && !privilegeStatus.is_elevated && (
         <div className="bg-amber-50 border-2 border-amber-500 rounded-md p-4 flex items-start space-x-3 shadow-xs">

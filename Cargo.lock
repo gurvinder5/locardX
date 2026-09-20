@@ -1980,6 +1980,7 @@ dependencies = [
  "locardx-reporting",
  "locardx-security",
  "locardx-verification",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

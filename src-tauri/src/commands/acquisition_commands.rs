@@ -25,6 +25,7 @@ pub struct CreateAcquisitionPlanRequest {
     pub chunk_size_bytes: Option<usize>,
     pub allow_overwrite: Option<bool>,
     pub session_token: Option<String>,
+    pub case_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,6 +33,7 @@ pub struct StartAcquisitionRequest {
     pub plan: AcquisitionPlan,
     pub session_token: Option<String>,
     pub operation_id: Option<String>,
+    pub case_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,10 +178,10 @@ pub fn create_acquisition_plan_handler(
     state: &AppState,
     request: CreateAcquisitionPlanRequest,
 ) -> Result<AcquisitionPlan, SafeErrorResponse> {
-    // Active Case Policy: Fail-closed if no active case or if case is closed
+    // Case Policy: Fail-closed if no active case or if case is closed
     state
         .case_service
-        .require_active_case()
+        .validate_case_for_operation(request.case_id.as_deref())
         .map_err(|e| SafeErrorResponse::from(&e))?;
 
     let actor_id = request
@@ -202,10 +204,10 @@ pub async fn start_acquisition_handler(
     state: &AppState,
     request: StartAcquisitionRequest,
 ) -> Result<AcquisitionResult, SafeErrorResponse> {
-    // Active Case Policy: Fail-closed if no active case or if case is closed
+    // Case Policy: Fail-closed if no active case or if case is closed
     let active_case = state
         .case_service
-        .require_active_case()
+        .validate_case_for_operation(request.case_id.as_deref())
         .map_err(|e| SafeErrorResponse::from(&e))?;
     let case_id = active_case.case_id.clone();
 
