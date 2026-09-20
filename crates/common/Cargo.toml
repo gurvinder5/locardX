@@ -1,0 +1,10 @@
+[package]
+name = "locardx-common"
+version.workspace = true
+edition.workspace = true
+description = "LocardX common types, configuration, error handling, and utilities"
+
+[dependencies]
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

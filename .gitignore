@@ -1,0 +1,149 @@
+# ==========================================
+# LocardX Root .gitignore
+# ==========================================
+
+# ------------------------------------------
+# Rust & Cargo Build Artifacts
+# ------------------------------------------
+/target/
+**/target/
+crates/**/target/
+src-tauri/target/
+**/*.rs.bk
+*.cargo-ok
+
+# ------------------------------------------
+# Node.js & Frontend Build Outputs
+# ------------------------------------------
+node_modules/
+**/node_modules/
+frontend/node_modules/
+dist/
+**/dist/
+dist-ssr/
+*.local
+
+# ------------------------------------------
+# Vite & Bundler Caches
+# ------------------------------------------
+.vite/
+**/.vite/
+.turbo/
+.parcel-cache/
+
+# ------------------------------------------
+# Tauri Desktop Build Artifacts
+# ------------------------------------------
+src-tauri/target/
+src-tauri/gen/
+*.msi
+*.exe
+*.app/
+*.dmg
+*.deb
+*.AppImage
+
+# ------------------------------------------
+# Environment & Secrets Configuration
+# ------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.pfx
+*.keystore
+
+# ------------------------------------------
+# Local Databases & Runtime Storage
+# ------------------------------------------
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+locardx.db*
+audit_logs/
+run/
+
+# ------------------------------------------
+# Logs & Diagnostic Dumps
+# ------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------
+# Forensic Images & Test Media Artifacts
+# (Prevent accidental commit of heavy/sensitive disk dumps)
+# ------------------------------------------
+*.dd
+*.raw
+*.img
+*.E01
+*.vmdk
+*.vhd
+*.vhdx
+*.qcow2
+test-data/**/*.img
+test-data/**/*.raw
+test-data/**/*.dd
+!test-data/**/README.md
+
+# ------------------------------------------
+# Operating System Generated Files
+# ------------------------------------------
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# ------------------------------------------
+# IDE & Editor Configurations
+# ------------------------------------------
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*.swn
+
+# ------------------------------------------
+# Temporary & Cache Files
+# ------------------------------------------
+tmp/
+temp/
+*.tmp
+*.bak

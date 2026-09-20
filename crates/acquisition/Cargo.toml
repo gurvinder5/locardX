@@ -1,0 +1,26 @@
+[package]
+name = "locardx-acquisition"
+version.workspace = true
+edition.workspace = true
+description = "LocardX forensic disk imaging and read-only physical device acquisition layer"
+
+[dependencies]
+locardx-common = { workspace = true }
+locardx-database = { workspace = true }
+locardx-audit = { workspace = true }
+locardx-device-manager = { workspace = true }
+locardx-operation-manager = { workspace = true }
+locardx-verification = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+rusqlite = { workspace = true }
+
+[dev-dependencies]
+locardx-auth = { workspace = true }
+tempfile = "3"

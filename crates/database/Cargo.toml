@@ -1,0 +1,10 @@
+[package]
+name = "locardx-database"
+version.workspace = true
+edition.workspace = true
+description = "LocardX SQLite persistence and migrations layer"
+
+[dependencies]
+locardx-common = { workspace = true }
+rusqlite = { workspace = true }
+tracing = { workspace = true }
