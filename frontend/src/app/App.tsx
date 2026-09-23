@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   HardDrive,
@@ -35,6 +35,8 @@ import { ForensicAcquisitionPage } from '../pages/ForensicAcquisitionPage';
 import { ForensicRecoveryPage } from '../pages/ForensicRecoveryPage';
 import { CaseManagementPage } from '../pages/CaseManagementPage';
 import { AuditTrailPage } from '../pages/AuditTrailPage';
+import { useRecoveryStore } from '../stores/recoveryStore';
+
 
 type NavTab =
   | 'dashboard'
@@ -66,6 +68,7 @@ export const App: React.FC = () => {
   const [infoLoading, setInfoLoading] = useState<boolean>(true);
   const [showCaseSelectorModal, setShowCaseSelectorModal] = useState(false);
   const [blockedNavTarget, setBlockedNavTarget] = useState<NavTab | null>(null);
+  const { isScanning: recoveryScanning } = useRecoveryStore();
 
   useEffect(() => {
     checkFirstRun();
@@ -160,7 +163,7 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wider">Active Case:</span>
                 <span className="font-mono font-bold text-sky-900">{activeCase.case_reference}</span>
-                <span className="text-slate-400">—</span>
+                <span className="text-slate-400">â€”</span>
                 <span className="max-w-[200px] truncate text-slate-700 font-medium">{activeCase.title}</span>
                 <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-bold border ${
                   activeCase.status === 'open' || activeCase.status === 'in_progress'
@@ -355,6 +358,12 @@ export const App: React.FC = () => {
           >
             <Search className="w-3.5 h-3.5 text-slate-600" />
             <span>Forensics & Recovery</span>
+            {recoveryScanning && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+            )}
           </button>
 
           <button
@@ -410,7 +419,9 @@ export const App: React.FC = () => {
 
         {activeTab === 'acquisition' && <ForensicAcquisitionPage />}
 
-        {activeTab === 'recovery' && <ForensicRecoveryPage />}
+        <div className={activeTab === 'recovery' ? '' : 'hidden'}>
+          <ForensicRecoveryPage />
+        </div>
 
         {activeTab === 'audit-logs' && <AuditTrailPage />}
       </main>

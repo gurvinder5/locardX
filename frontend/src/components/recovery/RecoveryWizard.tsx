@@ -12,7 +12,7 @@ import {
   Loader2,
   Briefcase,
 } from 'lucide-react';
-import { useRecovery } from '../../hooks/useRecovery';
+import { useRecoveryStore } from '../../stores/recoveryStore';
 import { RecoveryMode, RecoveryOptions, RecoverySourceSnapshot } from '../../types/recovery';
 import { RecoverySourceSelector } from './RecoverySourceSelector';
 import { RecoveryProgress } from './RecoveryProgress';
@@ -24,7 +24,7 @@ interface RecoveryWizardProps {
   sessionToken?: string | null;
 }
 
-export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) => {
+export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken: _sessionToken }) => {
   const { activeCase } = useCaseStore();
   const [showCaseModal, setShowCaseModal] = useState(false);
   const isCaseActive = activeCase && (activeCase.status === 'open' || activeCase.status === 'in_progress');
@@ -33,6 +33,8 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
     sources,
     loadingSources,
     selectedArtifact,
+    selectedSourceSnapshot,
+    setSelectedSourceSnapshot,
     plan,
     isPlanning,
     activeResult,
@@ -45,44 +47,23 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
     runRecovery,
     cancelCurrent,
     exportFiles,
-    resetState,
-  } = useRecovery(sessionToken);
-
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [selectedSourceSnapshot, setSelectedSourceSnapshot] = useState<RecoverySourceSnapshot | null>(null);
-  const [step2Error, setStep2Error] = useState<string | null>(null);
-
-  // Recovery Options State
-  const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>('all');
-  const [outputDir, setOutputDir] = useState<string>('C:\\RecoveredFiles');
-  const [minConfidence, setMinConfidence] = useState<number>(40);
-  const [enableFragmentation, setEnableFragmentation] = useState<boolean>(true);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([
-    'jpeg',
-    'png',
-    'gif',
-    'bmp',
-    'tiff',
-    'webp',
-    'pdf',
-    'doc',
-    'docx',
-    'xls',
-    'xlsx',
-    'ppt',
-    'pptx',
-    'rtf',
-    'zip',
-    '7z',
-    'rar',
-    'mp3',
-    'wav',
-    'mp4',
-    'avi',
-    'mkv',
-    'sqlite',
-    'text',
-  ]);
+    resetWizard: resetState,
+    currentStep,
+    setCurrentStep,
+    step2Error,
+    setStep2Error,
+    recoveryMode,
+    setRecoveryMode,
+    outputDir,
+    setOutputDir,
+    minConfidence,
+    setMinConfidence,
+    enableFragmentation,
+    setEnableFragmentation,
+    selectedTypes,
+    setSelectedTypes,
+    toggleType,
+  } = useRecoveryStore();
 
   const fileTypeOptions = [
     { id: 'jpeg', label: 'JPEG Images (.jpg, .jpeg)' },
@@ -112,11 +93,7 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
   ];
 
   const handleToggleType = (id: string) => {
-    if (selectedTypes.includes(id)) {
-      setSelectedTypes(selectedTypes.filter((t) => t !== id));
-    } else {
-      setSelectedTypes([...selectedTypes, id]);
-    }
+    toggleType(id);
   };
 
   const handleSelectSource = (src: RecoverySourceSnapshot) => {

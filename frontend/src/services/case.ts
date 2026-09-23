@@ -11,8 +11,6 @@ import {
   CustodyEvent,
   RecordCustodyRequest,
   UpdateCaseRequest,
-  AuditEvent,
-  AuditChainVerification,
   CaseAcquisitionItem,
   CaseRecoveryItem,
   CaseErasureItem,
@@ -435,37 +433,7 @@ export async function verifyCaseReportIntegrity(report: CaseForensicReport): Pro
   return true;
 }
 
-export async function listAuditEvents(limit = 100): Promise<AuditEvent[]> {
-  if (isTauriEnvironment()) {
-    return await invoke<AuditEvent[]>('list_audit_events', { limit });
-  }
-  return [
-    {
-      sequence_number: 1,
-      event_id: 'evt-001',
-      event_type: 'SYSTEM_STARTUP',
-      timestamp: new Date().toISOString(),
-      actor_id: null,
-      target_ref: null,
-      details: 'LocardX Workstation core booted',
-      prev_hash: '0000000000000000000000000000000000000000000000000000000000000000',
-      current_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-    },
-  ];
-}
-
-export async function verifyAuditChain(): Promise<AuditChainVerification> {
-  if (isTauriEnvironment()) {
-    return await invoke<AuditChainVerification>('verify_audit_chain');
-  }
-  return {
-    is_valid: true,
-    total_events: 42,
-    last_verified_sequence: 42,
-    broken_sequence: null,
-    details: 'Audit log cryptographic hash chain verified. Zero tampering detected.',
-  };
-}
+export { listAuditEvents, verifyAuditChain, recordAuditEvent } from './audit';
 
 let mockActiveCase: Case | null = mockCases[0] || null;
 
