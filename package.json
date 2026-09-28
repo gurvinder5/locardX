@@ -4,6 +4,9 @@
   "private": true,
   "description": "LocardX desktop forensic recovery and secure data sanitization platform",
   "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "typecheck": "npm run typecheck --prefix frontend",
     "tauri": "tauri"
   },
   "devDependencies": {
