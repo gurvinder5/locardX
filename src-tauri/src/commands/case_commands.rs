@@ -307,9 +307,7 @@ pub async fn set_active_case(
 }
 
 #[tauri::command]
-pub async fn clear_active_case(
-    state: State<'_, AppState>,
-) -> Result<(), SafeErrorResponse> {
+pub async fn clear_active_case(state: State<'_, AppState>) -> Result<(), SafeErrorResponse> {
     state.case_service.clear_active_case();
     Ok(())
 }
@@ -363,4 +361,3 @@ pub async fn list_case_erasures(
         .list_case_erasures(&case_id)
         .map_err(|e| SafeErrorResponse::from(&e))
 }
-

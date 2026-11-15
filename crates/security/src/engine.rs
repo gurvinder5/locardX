@@ -247,43 +247,41 @@ impl SafetyEngine {
         };
 
         // 4. Hard Safety Checks: System & Boot Protection
-        if snapshot.is_system || snapshot.is_boot {
-            if op_type.is_destructive() {
-                let reason = if snapshot.is_boot && !snapshot.is_system {
-                    ReasonCode::BootDevice
-                } else {
-                    ReasonCode::SystemDevice
-                };
+        if (snapshot.is_system || snapshot.is_boot) && op_type.is_destructive() {
+            let reason = if snapshot.is_boot && !snapshot.is_system {
+                ReasonCode::BootDevice
+            } else {
+                ReasonCode::SystemDevice
+            };
 
-                let msg = format!(
+            let msg = format!(
                     "HARD SAFETY BLOCK: Target '{}' is an active {} and cannot be targeted for destructive sanitization.",
                     target.identifier,
                     if reason == ReasonCode::BootDevice { "Boot Device" } else { "System Device" }
                 );
 
-                let _ = self.audit.log_structured_event(
-                    "SAFETY_CHECK_BLOCKED",
-                    actor_id.as_deref(),
-                    Some(&target.identifier),
-                    &msg,
-                );
+            let _ = self.audit.log_structured_event(
+                "SAFETY_CHECK_BLOCKED",
+                actor_id.as_deref(),
+                Some(&target.identifier),
+                &msg,
+            );
 
-                let decision = SafetyDecision {
-                    evaluation_id: evaluation_id.clone(),
-                    target: target.clone(),
-                    operation_type: op_type,
-                    actor_id: actor_id.clone(),
-                    decision: SafetyDecisionOutcome::Blocked,
-                    reason_code: reason,
-                    risk_level: RiskLevel::Critical,
-                    message: msg,
-                    evaluated_at: evaluated_at.clone(),
-                    target_snapshot: Some(snapshot),
-                    requires_confirmation: false,
-                };
-                self.persist_evaluation(&decision)?;
-                return Ok(decision);
-            }
+            let decision = SafetyDecision {
+                evaluation_id: evaluation_id.clone(),
+                target: target.clone(),
+                operation_type: op_type,
+                actor_id: actor_id.clone(),
+                decision: SafetyDecisionOutcome::Blocked,
+                reason_code: reason,
+                risk_level: RiskLevel::Critical,
+                message: msg,
+                evaluated_at: evaluated_at.clone(),
+                target_snapshot: Some(snapshot),
+                requires_confirmation: false,
+            };
+            self.persist_evaluation(&decision)?;
+            return Ok(decision);
         }
 
         // 5. Risk Assessment

@@ -209,7 +209,8 @@ impl DriveEraserService {
         if execution_mode == ExecutionMode::RealHardware {
             if !self.execution_gate.is_enabled() {
                 return Err(LocardError::SecurityViolation(
-                    "Real hardware execution is currently disabled in the execution gate.".to_string(),
+                    "Real hardware execution is currently disabled in the execution gate."
+                        .to_string(),
                 ));
             }
 
@@ -326,6 +327,7 @@ impl DriveEraserService {
     }
 
     /// Executes simulated drive sanitization, enforcing two-stage confirmation and live TOCTOU validation.
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_drive_erasure_simulation(
         &self,
         plan_id: &str,
@@ -593,6 +595,7 @@ impl DriveEraserService {
     /// - Fail-closed behavior on Unknown or DetectionFailed capability states
     /// - Interrupted operations never automatically become COMPLETED
     /// - Non-destructive stub rejection if RealHardware mode is requested
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_drive_erasure_with_gate(
         &self,
         plan_id: &str,
@@ -746,7 +749,8 @@ impl DriveEraserService {
                     Some(Arc::clone(&self.hardware_provider)),
                 );
 
-                let real_result = sanitizer.execute_and_verify(&permit, is_cancelled, Some(effective_progress));
+                let real_result =
+                    sanitizer.execute_and_verify(&permit, is_cancelled, Some(effective_progress));
 
                 match real_result {
                     Ok((bytes, elapsed, verification)) => {
@@ -941,7 +945,7 @@ impl DriveEraserService {
         let capabilities_json = serde_json::to_string(&result.method).unwrap_or_default();
         let audit_json = serde_json::to_string(&result.audit_references).unwrap_or_default();
         let failure_str = result.failure_reason.as_ref().map(|f| f.to_string());
-        let evidence_digest = format!("ev-{}", &result.operation_id);
+        let evidence_digest = format!("ev-{}", result.operation_id);
 
         self.db.with_conn(|conn| {
             conn.execute(

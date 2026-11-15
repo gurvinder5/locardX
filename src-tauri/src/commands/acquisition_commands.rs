@@ -438,7 +438,8 @@ pub fn verify_acquisition_artifact(
     verify_acquisition_artifact_handler(artifact)
 }
 
-pub fn check_acquisition_privileges_handler() -> Result<AcquisitionPrivilegeStatus, SafeErrorResponse> {
+pub fn check_acquisition_privileges_handler(
+) -> Result<AcquisitionPrivilegeStatus, SafeErrorResponse> {
     let is_elevated = is_elevated_admin();
     let platform = if cfg!(target_os = "windows") {
         "windows"

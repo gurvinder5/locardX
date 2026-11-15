@@ -14,7 +14,11 @@ pub fn parse_bmp_stream(data: &[u8]) -> Option<(u64, bool)> {
         return None;
     }
 
-    let is_valid = pixel_offset <= file_size && (dib_header_size == 40 || dib_header_size == 12 || dib_header_size == 108 || dib_header_size == 124);
+    let is_valid = pixel_offset <= file_size
+        && (dib_header_size == 40
+            || dib_header_size == 12
+            || dib_header_size == 108
+            || dib_header_size == 124);
     let final_len = file_size.min(data.len() as u64);
 
     Some((final_len, is_valid))
@@ -110,8 +114,8 @@ pub fn parse_tiff_stream(data: &[u8]) -> Option<(u64, bool)> {
         return None;
     }
 
-    let is_le = &data[0..4] == &[0x49, 0x49, 0x2A, 0x00];
-    let is_be = &data[0..4] == &[0x4D, 0x4D, 0x00, 0x2A];
+    let is_le = data[0..4] == [0x49, 0x49, 0x2A, 0x00];
+    let is_be = data[0..4] == [0x4D, 0x4D, 0x00, 0x2A];
     if !is_le && !is_be {
         return None;
     }

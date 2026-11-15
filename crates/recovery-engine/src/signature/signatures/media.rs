@@ -65,7 +65,8 @@ pub fn parse_mp4_stream(data: &[u8]) -> Option<(u64, bool)> {
             if offset + 16 > data.len() {
                 break;
             }
-            let ext_len = u64::from_be_bytes(data[offset + 8..offset + 16].try_into().unwrap()) as usize;
+            let ext_len =
+                u64::from_be_bytes(data[offset + 8..offset + 16].try_into().unwrap()) as usize;
             if ext_len < 16 || offset + ext_len > data.len() {
                 break;
             }
@@ -128,7 +129,7 @@ pub fn parse_mp3_stream(data: &[u8]) -> Option<(u64, bool)> {
 /// Parses Matroska / WebM (MKV) EBML container.
 /// Returns (file_length, is_valid)
 pub fn parse_mkv_stream(data: &[u8]) -> Option<(u64, bool)> {
-    if data.len() < 12 || &data[0..4] != &[0x1A, 0x45, 0xDF, 0xA3] {
+    if data.len() < 12 || data[0..4] != [0x1A, 0x45, 0xDF, 0xA3] {
         return None;
     }
 

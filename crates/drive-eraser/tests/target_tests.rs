@@ -112,10 +112,7 @@ fn test_toctou_mutation_serial_number_changed() {
 
     // Initial snapshot of internal fixed drive PhysicalDrive1
     let (_, snapshot) = inspect_physical_device(r"\\.\PhysicalDrive1", &registry, 512).unwrap();
-    assert_eq!(
-        snapshot.serial_number,
-        Some("W1E89XYZ".to_string())
-    );
+    assert_eq!(snapshot.serial_number, Some("W1E89XYZ".to_string()));
 
     // Verify initial integrity check passes
     assert!(verify_live_device_integrity(&snapshot, &registry).is_ok());

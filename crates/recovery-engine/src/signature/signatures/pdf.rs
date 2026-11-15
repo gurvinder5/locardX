@@ -3,7 +3,7 @@ pub const PDF_MAGIC: [u8; 4] = [0x25, 0x50, 0x44, 0x46]; // %PDF
 /// Validates and parses PDF structure.
 /// Returns (file_length, is_valid) by finding the final %%EOF trailer.
 pub fn parse_pdf_stream(data: &[u8]) -> Option<(u64, bool)> {
-    if data.len() < 10 || &data[0..4] != &PDF_MAGIC {
+    if data.len() < 10 || data[0..4] != PDF_MAGIC {
         return None;
     }
 
@@ -16,7 +16,9 @@ pub fn parse_pdf_stream(data: &[u8]) -> Option<(u64, bool)> {
         if &data[pos..pos + 5] == eof_marker {
             let mut end = pos + 5;
             // Include trailing whitespace / newlines
-            while end < data.len() && (data[end] == b'\r' || data[end] == b'\n' || data[end] == b' ') {
+            while end < data.len()
+                && (data[end] == b'\r' || data[end] == b'\n' || data[end] == b' ')
+            {
                 end += 1;
             }
 

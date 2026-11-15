@@ -133,7 +133,8 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
 
                 // Cluster-aware fragment reconstruction
                 if options.enable_fragment_reconstruction
-                    && (val_status != crate::models::ValidationStatus::Valid || !parsed.is_valid_structure)
+                    && (val_status != crate::models::ValidationStatus::Valid
+                        || !parsed.is_valid_structure)
                 {
                     let cluster_size = 4096u64;
                     let remainder = actual_size % cluster_size;
@@ -154,7 +155,10 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                             {
                                 // Check if this cluster contains end marker for candidate
                                 if let Some(footer) = &candidate.signature.footer_magic {
-                                    if cluster_buf.windows(footer.len()).any(|w| w == footer.as_slice()) {
+                                    if cluster_buf
+                                        .windows(footer.len())
+                                        .any(|w| w == footer.as_slice())
+                                    {
                                         // Attempt fragment reconstruction
                                         let f1 = crate::fragmentation::fragment::create_fragment(
                                             "temp-1",
@@ -177,8 +181,10 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                                             vec![f1, f2],
                                             vec![file_payload.clone(), cluster_buf.clone()],
                                         );
-                                        if outcome.result == crate::models::ReconstructionResult::Reconstructed
-                                            || outcome.validation_status == crate::models::ValidationStatus::Valid
+                                        if outcome.result
+                                            == crate::models::ReconstructionResult::Reconstructed
+                                            || outcome.validation_status
+                                                == crate::models::ValidationStatus::Valid
                                         {
                                             file_payload = outcome.assembled_bytes;
                                             actual_size = file_payload.len() as u64;
@@ -209,7 +215,10 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                         }
                     }
 
-                    if !is_frag && val_status == crate::models::ValidationStatus::Valid && !parsed.is_valid_structure {
+                    if !is_frag
+                        && val_status == crate::models::ValidationStatus::Valid
+                        && !parsed.is_valid_structure
+                    {
                         val_status = crate::models::ValidationStatus::PartiallyValid;
                     }
                 }

@@ -27,7 +27,7 @@ impl FromStr for CaseStatus {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().replace('_', "").replace('-', "").as_str() {
+        match s.to_lowercase().replace(['_', '-'], "").as_str() {
             "open" => Ok(Self::Open),
             "inprogress" => Ok(Self::InProgress),
             "completed" => Ok(Self::Completed),

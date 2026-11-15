@@ -155,7 +155,7 @@ async fn run_master_performance_evaluation() {
 
     let sizes_mb = [1, 10, 50];
     for &mb in &sizes_mb {
-        let (disk_file, expected_hash, total_bytes) = create_benchmark_disk(&temp_dir, mb);
+        let (disk_file, expected_hash, _total_bytes) = create_benchmark_disk(&temp_dir, mb);
 
         let t_hash = Instant::now();
         let computed_hash = compute_streaming_sha256(&disk_file).expect("Compute streaming hash");

@@ -26,10 +26,9 @@ pub fn parse_file_structure(file_type: &FileType, data: &[u8]) -> Option<ParsedS
         FileType::Webp | FileType::Wav | FileType::Avi => parse_riff(data),
         FileType::Pdf => parse_pdf(data),
         FileType::OfficeDoc | FileType::OfficeXls | FileType::OfficePpt => parse_cfbf(data),
-        FileType::Zip
-        | FileType::OfficeDocx
-        | FileType::OfficeXlsx
-        | FileType::OfficePptx => parse_zip(data),
+        FileType::Zip | FileType::OfficeDocx | FileType::OfficeXlsx | FileType::OfficePptx => {
+            parse_zip(data)
+        }
         FileType::Rtf => parse_rtf(data),
         FileType::SevenZip => parse_seven_zip(data),
         FileType::Rar => parse_rar(data),
@@ -162,7 +161,10 @@ fn parse_zip(data: &[u8]) -> Option<ParsedStructure> {
         "EOCD record located".to_string(),
     ];
     if resolved_type != FileType::Zip {
-        notes.push(format!("Office OpenXML structures identified ({})", resolved_type));
+        notes.push(format!(
+            "Office OpenXML structures identified ({})",
+            resolved_type
+        ));
     }
 
     Some(ParsedStructure {

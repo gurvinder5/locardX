@@ -111,17 +111,16 @@ pub fn is_safe_external_erase_target(
 
     // 5. Hard block on PhysicalDrive0 when it represents primary system storage
     let norm = device.device_id.to_uppercase();
-    if norm == r"\\.\PHYSICALDRIVE0" || norm == "PHYSICALDRIVE0" {
-        if device.is_system_device
+    if (norm == r"\\.\PHYSICALDRIVE0" || norm == "PHYSICALDRIVE0")
+        && (device.is_system_device
             || device.classification == DeviceClassification::SystemDevice
             || device.classification == DeviceClassification::BootDevice
-            || !device.removable
-        {
-            return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
+            || !device.removable)
+    {
+        return Err(DriveEraseFailureReason::SystemOrBootDeviceProtected(format!(
                 "Physical device '{}' is the primary system storage unit (PhysicalDrive0). Destructive erasure is prohibited.",
                 device.device_id
             )));
-        }
     }
 
     Ok(())

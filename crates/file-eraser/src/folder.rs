@@ -54,7 +54,7 @@ pub fn unlink_directory_safely(dir_path: &Path) -> Result<(), std::io::Error> {
                     || e.kind() == std::io::ErrorKind::DirectoryNotEmpty
                     || raw_code == Some(145)  // ERROR_DIR_NOT_EMPTY
                     || raw_code == Some(5)    // ERROR_ACCESS_DENIED
-                    || raw_code == Some(32);  // ERROR_SHARING_VIOLATION
+                    || raw_code == Some(32); // ERROR_SHARING_VIOLATION
 
                 last_err = Some(e);
 
@@ -75,10 +75,10 @@ pub fn unlink_directory_safely(dir_path: &Path) -> Result<(), std::io::Error> {
     }
 
     Err(last_err.unwrap_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to remove directory '{}'", dir_path.display()),
-        )
+        std::io::Error::other(format!(
+            "Failed to remove directory '{}'",
+            dir_path.display()
+        ))
     }))
 }
 
@@ -243,7 +243,7 @@ pub fn sanitize_folder_recursive(
 
     // 2. Remove subdirectories bottom-up: depth-first topological sorting
     // Directories with more path components (greater depth) MUST be removed before shallower ancestors!
-    dirs.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
+    dirs.sort_by_key(|a| std::cmp::Reverse(a.components().count()));
 
     for dir_path in &dirs {
         let dir_str = dir_path.to_string_lossy().to_string();

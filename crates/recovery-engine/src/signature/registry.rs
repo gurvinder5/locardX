@@ -225,12 +225,18 @@ impl SignatureRegistry {
             .filter(|s| {
                 types.iter().any(|t| {
                     t == &s.file_type
-                        || (matches!(t, FileType::OfficeDocx | FileType::OfficeXlsx | FileType::OfficePptx)
-                            && s.file_type == FileType::Zip)
-                        || (matches!(t, FileType::OfficeDoc | FileType::OfficeXls | FileType::OfficePpt)
-                            && s.file_type == FileType::OfficeDoc)
+                        || (matches!(
+                            t,
+                            FileType::OfficeDocx | FileType::OfficeXlsx | FileType::OfficePptx
+                        ) && s.file_type == FileType::Zip)
+                        || (matches!(
+                            t,
+                            FileType::OfficeDoc | FileType::OfficeXls | FileType::OfficePpt
+                        ) && s.file_type == FileType::OfficeDoc)
                         || (matches!(t, FileType::Wav | FileType::Avi | FileType::Webp)
-                            && (s.file_type == FileType::Wav || s.file_type == FileType::Avi || s.file_type == FileType::Webp))
+                            && (s.file_type == FileType::Wav
+                                || s.file_type == FileType::Avi
+                                || s.file_type == FileType::Webp))
                 })
             })
             .cloned()

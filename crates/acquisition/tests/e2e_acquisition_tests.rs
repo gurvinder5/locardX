@@ -243,7 +243,13 @@ fn test_06_cooperative_cancellation_cleans_up_destination() {
         Some(&on_progress),
     );
 
-    assert!(matches!(res, Err(AcquisitionEngineError { reason: AcquisitionFailureReason::Cancelled, .. })));
+    assert!(matches!(
+        res,
+        Err(AcquisitionEngineError {
+            reason: AcquisitionFailureReason::Cancelled,
+            ..
+        })
+    ));
     // Incomplete file must be deleted upon cancellation cleanup
     assert!(!dest_file.exists());
 }
@@ -299,7 +305,13 @@ fn test_08_mid_stream_read_io_error_handling() {
         None,
     );
 
-    assert!(matches!(res, Err(AcquisitionEngineError { reason: AcquisitionFailureReason::ReadError(_), .. })));
+    assert!(matches!(
+        res,
+        Err(AcquisitionEngineError {
+            reason: AcquisitionFailureReason::ReadError(_),
+            ..
+        })
+    ));
     assert!(!dest_file.exists());
 }
 

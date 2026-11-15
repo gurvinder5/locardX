@@ -559,7 +559,11 @@ fn test_active_case_enforcement() {
     let err = service.require_active_case().unwrap_err();
     match err {
         locardx_common::LocardError::SecurityViolation(msg) => {
-            assert!(msg.contains("ACTIVE_CASE_REQUIRED"), "Expected ACTIVE_CASE_REQUIRED error, got: {}", msg);
+            assert!(
+                msg.contains("ACTIVE_CASE_REQUIRED"),
+                "Expected ACTIVE_CASE_REQUIRED error, got: {}",
+                msg
+            );
         }
         other => panic!("Expected SecurityViolation, got {:?}", other),
     }
@@ -572,19 +576,29 @@ fn test_active_case_enforcement() {
         metadata_json: None,
     };
     let case1 = service.create_case(req, &actor).expect("Create case");
-    let active = service.set_active_case(&case1.case_id).expect("Set active case");
+    let active = service
+        .set_active_case(&case1.case_id)
+        .expect("Set active case");
     assert_eq!(active.case_id, case1.case_id);
 
     // 3. Now require_active_case succeeds and returns case1
-    let req_case = service.require_active_case().expect("Require active case must succeed");
+    let req_case = service
+        .require_active_case()
+        .expect("Require active case must succeed");
     assert_eq!(req_case.case_id, case1.case_id);
 
     // 4. Close the case -> require_active_case must fail closed with CASE_CLOSED
-    service.update_case_status(&case1.case_id, CaseStatus::Completed, &actor).expect("Complete case");
+    service
+        .update_case_status(&case1.case_id, CaseStatus::Completed, &actor)
+        .expect("Complete case");
     let err_closed = service.require_active_case().unwrap_err();
     match err_closed {
         locardx_common::LocardError::SecurityViolation(msg) => {
-            assert!(msg.contains("CASE_CLOSED"), "Expected CASE_CLOSED error, got: {}", msg);
+            assert!(
+                msg.contains("CASE_CLOSED"),
+                "Expected CASE_CLOSED error, got: {}",
+                msg
+            );
         }
         other => panic!("Expected SecurityViolation, got {:?}", other),
     }
@@ -873,5 +887,3 @@ fn test_case_module_queries() {
         .expect("File erasure found");
     assert_eq!(fil.target_identifier, "C:\\temp\\secret.txt");
 }
-
-
