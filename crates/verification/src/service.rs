@@ -181,10 +181,8 @@ impl IntegrityService {
                     _ => TargetType::Unknown,
                 };
 
-                let algorithm_str: String = row.get(5)?;
-                let algorithm = match algorithm_str.as_str() {
-                    _ => HashAlgorithm::Sha256,
-                };
+                let _algorithm_str: String = row.get(5)?;
+                let algorithm = HashAlgorithm::Sha256;
 
                 let bytes: i64 = row.get(7)?;
 

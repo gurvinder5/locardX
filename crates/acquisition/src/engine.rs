@@ -69,6 +69,7 @@ pub struct AcquisitionEngine;
 impl AcquisitionEngine {
     /// Executes a bitstream raw/dd acquisition from `stream` to `destination_path`.
     /// Simultaneously computes the streaming SHA-256 hash and emits progress telemetry.
+    #[allow(clippy::result_large_err)]
     pub fn execute(
         operation_id: &str,
         stream: Box<dyn ReadOnlyDeviceStream>,
@@ -90,6 +91,7 @@ impl AcquisitionEngine {
         )
     }
 
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     pub fn execute_with_options(
         operation_id: &str,
         mut stream: Box<dyn ReadOnlyDeviceStream>,
@@ -233,7 +235,7 @@ impl AcquisitionEngine {
             total_bytes_acquired += read_bytes as u64;
             chunk_index += 1;
 
-            if chunk_index <= 3 || chunk_index % 100 == 0 {
+            if chunk_index <= 3 || chunk_index.is_multiple_of(100) {
                 info!(
                     operation_id,
                     chunk_index,

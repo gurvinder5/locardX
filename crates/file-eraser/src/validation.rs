@@ -170,7 +170,11 @@ pub fn validate_folder_target(
 
     // Hard block filesystem root
     let upper = raw_trimmed.to_uppercase();
-    if upper == "/" || upper == "C:" || upper == "C:\\" || (upper.len() <= 3 && upper.ends_with(':')) {
+    if upper == "/"
+        || upper == "C:"
+        || upper == "C:\\"
+        || (upper.len() <= 3 && upper.ends_with(':'))
+    {
         return Err(FileEraseFailureReason::SystemOrBootPath(format!(
             "Target '{}' is a filesystem root directory; erasure is prohibited",
             raw_trimmed
@@ -275,14 +279,12 @@ pub fn verify_target_snapshot_integrity(
         )));
     }
 
-    if !snapshot.is_directory {
-        if meta.len() != snapshot.size_bytes {
-            return Err(FileEraseFailureReason::TargetChanged(format!(
-                "Target file size mutated from {} bytes to {} bytes",
-                snapshot.size_bytes,
-                meta.len()
-            )));
-        }
+    if !snapshot.is_directory && meta.len() != snapshot.size_bytes {
+        return Err(FileEraseFailureReason::TargetChanged(format!(
+            "Target file size mutated from {} bytes to {} bytes",
+            snapshot.size_bytes,
+            meta.len()
+        )));
     }
 
     Ok(())

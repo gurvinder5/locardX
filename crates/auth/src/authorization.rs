@@ -151,10 +151,10 @@ impl AuthorizationEngine {
         if op_type.is_destructive() {
             match role {
                 UserRole::Viewer | UserRole::Investigator => {
-                    return Err(LocardError::SecurityViolation(format!(
+                    Err(LocardError::SecurityViolation(format!(
                         "Access denied: Role '{}' cannot request destructive operations.",
                         role
-                    )));
+                    )))
                 }
                 UserRole::Operator | UserRole::Administrator => {
                     // Allowed to prepare/request confirmation, but final execution will be gated

@@ -143,11 +143,7 @@ pub fn generate_drive_erase_plan(
     };
 
     // 3. Risk Assessment
-    let risk_level = if snapshot.is_removable {
-        RiskLevel::High
-    } else {
-        RiskLevel::High
-    };
+    let risk_level = RiskLevel::High;
 
     let plan_id = format!("dplan-{}", Uuid::new_v4());
 

@@ -112,9 +112,7 @@ impl FileType {
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             }
             Self::OfficeXls => "application/vnd.ms-excel",
-            Self::OfficeXlsx => {
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            }
+            Self::OfficeXlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             Self::OfficePpt => "application/vnd.ms-powerpoint",
             Self::OfficePptx => {
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"

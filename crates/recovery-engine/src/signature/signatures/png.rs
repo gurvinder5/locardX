@@ -3,7 +3,7 @@ pub const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 /// Validates and parses PNG chunk structure.
 /// Returns (file_length, is_valid) if PNG chunks lead to a verified IEND chunk.
 pub fn parse_png_stream(data: &[u8]) -> Option<(u64, bool)> {
-    if data.len() < 8 || &data[0..8] != &PNG_MAGIC {
+    if data.len() < 8 || data[0..8] != PNG_MAGIC {
         return None;
     }
 
@@ -55,10 +55,12 @@ pub fn parse_png_stream(data: &[u8]) -> Option<(u64, bool)> {
     }
 
     // If stream broke before IEND, search for IEND pattern within forward range (up to 8MB)
-    let iend_pattern = [0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
+    let iend_pattern = [
+        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
     let limit = (offset + 8 * 1024 * 1024).min(data.len());
     for i in offset..limit.saturating_sub(12) {
-        if &data[i..i + 12] == &iend_pattern {
+        if data[i..i + 12] == iend_pattern {
             let file_size = (i + 12) as u64;
             return Some((file_size, has_ihdr && has_idat));
         }

@@ -311,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::permissions_set_readonly_false)]
     fn abort_reports_cleanup_failed_when_deletion_is_prevented() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("locked.raw");
@@ -344,7 +345,11 @@ mod tests {
 
         if staging.exists() {
             assert_eq!(cleanup.status, ArtifactCleanupStatus::CleanupFailed);
-            assert!(cleanup.error.as_deref().unwrap_or("").contains("CLEANUP_FAILED"));
+            assert!(cleanup
+                .error
+                .as_deref()
+                .unwrap_or("")
+                .contains("CLEANUP_FAILED"));
             #[cfg(windows)]
             {
                 let mut perms = std::fs::metadata(&staging).unwrap().permissions();

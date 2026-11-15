@@ -422,7 +422,10 @@ async fn test_folder_with_multiple_files() {
         .expect("Execution failed");
 
     assert_eq!(result.status, FileEraseStatus::Completed);
-    assert!(!root_dir.exists(), "Selected folder TestFolder must be completely removed");
+    assert!(
+        !root_dir.exists(),
+        "Selected folder TestFolder must be completely removed"
+    );
     assert!(!a_txt.exists());
     assert!(!b_txt.exists());
     assert!(!c_txt.exists());
@@ -471,10 +474,12 @@ fn test_folder_verification_failure_unit() {
     let temp_dir = std::env::temp_dir().join(format!("test_verif_fail_{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&temp_dir).unwrap();
 
-    let mut stats = FolderEraseStats::default();
-    stats.total_files = 2;
-    stats.files_sanitized = 1;
-    stats.files_failed = 1;
+    let stats = FolderEraseStats {
+        total_files: 2,
+        files_sanitized: 1,
+        files_failed: 1,
+        ..Default::default()
+    };
 
     // Target still exists on disk, and stats has failures
     let res = verify_folder_erasure(&temp_dir, &temp_dir.to_string_lossy(), &stats);

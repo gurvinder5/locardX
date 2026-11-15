@@ -82,6 +82,12 @@ impl FaultInjectableAcquisitionReader {
     }
 }
 
+impl Default for FaultInjectableAcquisitionReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AcquisitionSourceReader for FaultInjectableAcquisitionReader {
     fn open_read_only(
         &self,

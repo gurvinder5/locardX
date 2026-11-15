@@ -46,6 +46,7 @@ impl AuditService {
     }
 
     /// Computes the SHA-256 hash for an audit entry given its fields and previous hash.
+    #[allow(clippy::too_many_arguments)]
     pub fn compute_event_hash(
         sequence_number: i64,
         event_id: &str,

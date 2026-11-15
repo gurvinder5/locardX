@@ -110,6 +110,7 @@ impl SanitizationReportGenerator {
     }
 
     /// Computes the SHA-256 digest covering all substantive fields of the report.
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate_report_digest(
         report_id: &str,
         operation_id: &str,

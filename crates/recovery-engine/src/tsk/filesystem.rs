@@ -120,7 +120,10 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
     let bytes_per_sector = u16::from_le_bytes(vbr[11..13].try_into().unwrap()) as u64;
     let sectors_per_cluster = vbr[13] as u64;
     if bytes_per_sector == 0 || sectors_per_cluster == 0 {
-        report.error = Some("Invalid NTFS geometry in boot sector (zero bytes per sector or sectors per cluster)".to_string());
+        report.error = Some(
+            "Invalid NTFS geometry in boot sector (zero bytes per sector or sectors per cluster)"
+                .to_string(),
+        );
         return report;
     }
 
@@ -159,8 +162,11 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
         }
     };
 
-    if mft_record_size < 512 || mft_record_size > 4096 {
-        report.error = Some(format!("Unsupported MFT record size: {} bytes", mft_record_size));
+    if !(512..=4096).contains(&mft_record_size) {
+        report.error = Some(format!(
+            "Unsupported MFT record size: {} bytes",
+            mft_record_size
+        ));
         return report;
     }
 
@@ -208,11 +214,17 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
     let mut record_buf = vec![0u8; mft_record_size as usize];
 
     for idx in 0..records_to_scan {
-        let record_offset = match (idx as u64).checked_mul(mft_record_size).and_then(|o| mft_start.checked_add(o)) {
+        let record_offset = match (idx as u64)
+            .checked_mul(mft_record_size)
+            .and_then(|o| mft_start.checked_add(o))
+        {
             Some(ro) => ro,
             None => break,
         };
-        if record_offset.checked_add(mft_record_size).map_or(true, |end| end > partition_end) {
+        if record_offset
+            .checked_add(mft_record_size)
+            .is_none_or(|end| end > partition_end)
+        {
             break;
         }
 
@@ -235,8 +247,13 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
 
         // Recover unallocated / deleted file records (!is_in_use && !is_dir)
         if !is_in_use && !is_dir {
-            if let Some(entry) = extract_ntfs_mft_file(&record_buf, start_offset, record_offset, cluster_size) {
-                if entry.size_bytes > 0 && entry.source_offset > 0 && entry.source_offset < partition_end {
+            if let Some(entry) =
+                extract_ntfs_mft_file(&record_buf, start_offset, record_offset, cluster_size)
+            {
+                if entry.size_bytes > 0
+                    && entry.source_offset > 0
+                    && entry.source_offset < partition_end
+                {
                     report.deleted_candidates += 1;
                     let file_name = entry.name.clone();
                     report.files.push(entry);
@@ -286,7 +303,8 @@ fn extract_ntfs_mft_file(
             break;
         }
 
-        let attr_len = u32::from_le_bytes(record[cur_offset + 4..cur_offset + 8].try_into().unwrap()) as usize;
+        let attr_len =
+            u32::from_le_bytes(record[cur_offset + 4..cur_offset + 8].try_into().unwrap()) as usize;
         if attr_len < 8 || cur_offset + attr_len > record.len() {
             break;
         }
@@ -298,7 +316,8 @@ fn extract_ntfs_mft_file(
             0x30 => {
                 // $FILE_NAME attribute
                 if !non_resident && attr_data.len() > 24 {
-                    let content_offset = u16::from_le_bytes([attr_data[20], attr_data[21]]) as usize;
+                    let content_offset =
+                        u16::from_le_bytes([attr_data[20], attr_data[21]]) as usize;
                     if content_offset + 66 <= attr_data.len() {
                         let fn_content = &attr_data[content_offset..];
                         let name_len = fn_content[64] as usize;
@@ -306,7 +325,7 @@ fn extract_ntfs_mft_file(
 
                         if content_offset + 66 + name_len * 2 <= attr_data.len() {
                             let mut name_u16 = Vec::new();
-                            for chunk in fn_content[66..66 + name_len * 2].chunks_exact(2) {
+                            for chunk in fn_content[66..66 + name_len * 2].as_chunks::<2>().0 {
                                 name_u16.push(u16::from_le_bytes([chunk[0], chunk[1]]));
                             }
                             let decoded_name = String::from_utf16_lossy(&name_u16);
@@ -327,12 +346,18 @@ fn extract_ntfs_mft_file(
                         let real_size = u64::from_le_bytes(attr_data[48..56].try_into().unwrap());
                         size_bytes = real_size;
 
-                        let runlist_offset = u16::from_le_bytes([attr_data[32], attr_data[33]]) as usize;
+                        let runlist_offset =
+                            u16::from_le_bytes([attr_data[32], attr_data[33]]) as usize;
                         if runlist_offset < attr_data.len() {
-                            if let Some(start_cluster) = parse_first_runlist_cluster(&attr_data[runlist_offset..]) {
+                            if let Some(start_cluster) =
+                                parse_first_runlist_cluster(&attr_data[runlist_offset..])
+                            {
                                 if start_cluster >= 0 {
-                                    if let Some(cluster_bytes) = (start_cluster as u64).checked_mul(cluster_size) {
-                                        if let Some(fo) = partition_start.checked_add(cluster_bytes) {
+                                    if let Some(cluster_bytes) =
+                                        (start_cluster as u64).checked_mul(cluster_size)
+                                    {
+                                        if let Some(fo) = partition_start.checked_add(cluster_bytes)
+                                        {
                                             file_offset = fo;
                                         }
                                     }
@@ -340,8 +365,10 @@ fn extract_ntfs_mft_file(
                             }
                         }
                     } else if !non_resident && attr_data.len() >= 24 {
-                        let content_size = u32::from_le_bytes(attr_data[16..20].try_into().unwrap()) as u64;
-                        let content_offset = u16::from_le_bytes([attr_data[20], attr_data[21]]) as u64;
+                        let content_size =
+                            u32::from_le_bytes(attr_data[16..20].try_into().unwrap()) as u64;
+                        let content_offset =
+                            u16::from_le_bytes([attr_data[20], attr_data[21]]) as u64;
                         size_bytes = content_size;
                         if let Some(off) = (cur_offset as u64).checked_add(content_offset) {
                             if let Some(fo) = record_offset.checked_add(off) {
@@ -507,11 +534,13 @@ pub fn parse_fat32_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
             _ => continue,
         };
 
-        if reader.seek(SeekFrom::Start(dir_offset)).is_err() || reader.read_exact(&mut dir_buf).is_err() {
+        if reader.seek(SeekFrom::Start(dir_offset)).is_err()
+            || reader.read_exact(&mut dir_buf).is_err()
+        {
             continue;
         }
 
-        for chunk in dir_buf.chunks_exact(32) {
+        for chunk in dir_buf.as_chunks::<32>().0 {
             let first_byte = chunk[0];
             if first_byte == 0x00 {
                 // In FAT32, 0x00 indicates no more active entries in this slot block
@@ -629,7 +658,7 @@ pub fn parse_ext4_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
     let s_inodes_per_group = u32::from_le_bytes(sb[40..44].try_into().unwrap()) as usize;
     let s_inode_size = u16::from_le_bytes(sb[88..90].try_into().unwrap()) as u64;
 
-    if s_inodes_per_group == 0 || s_inode_size < 128 || s_inode_size > 4096 {
+    if s_inodes_per_group == 0 || !(128..=4096).contains(&s_inode_size) {
         report.error = Some("Invalid ext4 inode configuration".to_string());
         return report;
     }

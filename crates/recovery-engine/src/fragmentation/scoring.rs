@@ -18,11 +18,7 @@ pub fn score_fragment_link(
     }
 
     // Closer proximity gives higher baseline probability
-    let gap = if second_offset >= first_offset + first_len {
-        second_offset - (first_offset + first_len)
-    } else {
-        (first_offset + first_len) - second_offset
-    };
+    let gap = second_offset.abs_diff(first_offset + first_len);
 
     if gap == 0 {
         // Perfectly contiguous

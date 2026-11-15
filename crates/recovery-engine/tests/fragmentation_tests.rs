@@ -16,7 +16,7 @@ fn test_contiguity_and_alignment() {
 
     let frag1 = create_fragment("file-1", 0, 4096, 4096, FragmentType::Header, 0.9);
     assert_eq!(
-        evaluate_contiguity(&[frag1.clone()]),
+        evaluate_contiguity(std::slice::from_ref(&frag1)),
         FragmentStatus::Contiguous
     );
 

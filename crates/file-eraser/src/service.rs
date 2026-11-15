@@ -202,6 +202,7 @@ impl FileEraserService {
     }
 
     /// Executes file erasure after validating two-stage confirmation challenge and checking TOCTOU snapshot.
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_file_erasure(
         &self,
         plan_id: &str,
@@ -428,6 +429,7 @@ impl FileEraserService {
     }
 
     /// Executes recursive folder erasure after validating two-stage confirmation challenge and checking TOCTOU snapshot.
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_folder_erasure(
         &self,
         plan_id: &str,

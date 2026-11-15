@@ -167,7 +167,8 @@ impl RecoveryService {
             ) {
                 if canon_img == canon_out {
                     return Err(LocardError::Operation(
-                        "Output directory cannot be identical to the evidence image file".to_string(),
+                        "Output directory cannot be identical to the evidence image file"
+                            .to_string(),
                     ));
                 }
             }
@@ -821,13 +822,15 @@ impl RecoveryService {
                     let dev_id: String = row.get(4)?;
                     let serial: Option<String> = row.get(5)?;
                     let completed: String = row.get(6)?;
-                    Ok((acq_id, dest_path, size_bytes, sha256, dev_id, serial, completed))
+                    Ok((
+                        acq_id, dest_path, size_bytes, sha256, dev_id, serial, completed,
+                    ))
                 }) {
                     for r in acq_rows.flatten() {
                         let (acq_id, dest_path, size_bytes, sha256, dev_id, serial, completed) = r;
                         if !seen_acq_ids.contains(&acq_id) {
                             sources.push(RecoverySourceSnapshot {
-                                source_id: format!("src-acq-{}", &acq_id),
+                                source_id: format!("src-acq-{}", acq_id),
                                 acquisition_id: acq_id,
                                 image_path: dest_path,
                                 image_size_bytes: size_bytes.max(0) as u64,
@@ -909,16 +912,23 @@ impl RecoveryService {
             .recovered_files
             .iter()
             .find(|f| f.file_id == file_id)
-            .ok_or_else(|| LocardError::Operation(format!("Recovered file {} not found in job", file_id)))?;
+            .ok_or_else(|| {
+                LocardError::Operation(format!("Recovered file {} not found in job", file_id))
+            })?;
 
         // Determine workspace base path
         let workspace_base = match custom_workspace_dir {
             Some(p) => p.to_path_buf(),
-            None => std::env::temp_dir().join("locardx_recovery_workspace").join(job_id),
+            None => std::env::temp_dir()
+                .join("locardx_recovery_workspace")
+                .join(job_id),
         };
 
         std::fs::create_dir_all(&workspace_base).map_err(|e| {
-            LocardError::Operation(format!("Failed to create recovery workspace directory: {}", e))
+            LocardError::Operation(format!(
+                "Failed to create recovery workspace directory: {}",
+                e
+            ))
         })?;
 
         let workspace_canonical = workspace_base.canonicalize().map_err(|e| {
@@ -928,7 +938,10 @@ impl RecoveryService {
         let cat_folder = rec_file.category.to_string().to_lowercase();
         let target_dir = workspace_canonical.join(&cat_folder);
         std::fs::create_dir_all(&target_dir).map_err(|e| {
-            LocardError::Operation(format!("Failed to create category folder in workspace: {}", e))
+            LocardError::Operation(format!(
+                "Failed to create category folder in workspace: {}",
+                e
+            ))
         })?;
 
         // Sanitize suggested filename to prevent path traversal
@@ -977,7 +990,10 @@ impl RecoveryService {
         }
 
         let mut out = std::fs::File::create(&target_path).map_err(|e| {
-            LocardError::Operation(format!("Failed to write recovered artifact to workspace: {}", e))
+            LocardError::Operation(format!(
+                "Failed to write recovered artifact to workspace: {}",
+                e
+            ))
         })?;
         out.write_all(&buf).map_err(|e| {
             LocardError::Operation(format!("Failed to write recovered bytes: {}", e))
@@ -1004,18 +1020,28 @@ impl RecoveryService {
         }
 
         opener::open(&path).map_err(|e| {
-            LocardError::Operation(format!("Operating system failed to open file with default application: {}", e))
+            LocardError::Operation(format!(
+                "Operating system failed to open file with default application: {}",
+                e
+            ))
         })?;
 
         Ok(path.to_string_lossy().to_string())
     }
 
     /// Safely reveals a recovered artifact in the OS file manager.
-    pub fn reveal_recovered_file(&self, job_id: &str, file_id: &str) -> Result<String, LocardError> {
+    pub fn reveal_recovered_file(
+        &self,
+        job_id: &str,
+        file_id: &str,
+    ) -> Result<String, LocardError> {
         let path = self.materialize_recovered_file(job_id, file_id, None)?;
 
         opener::reveal(&path).map_err(|e| {
-            LocardError::Operation(format!("Operating system failed to reveal file in file manager: {}", e))
+            LocardError::Operation(format!(
+                "Operating system failed to reveal file in file manager: {}",
+                e
+            ))
         })?;
 
         Ok(path.to_string_lossy().to_string())

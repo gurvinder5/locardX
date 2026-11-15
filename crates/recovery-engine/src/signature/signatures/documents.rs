@@ -6,12 +6,12 @@ pub const CFBF_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
 /// Parses Compound File Binary Format (CFBF) streams and identifies document type.
 /// Returns (file_length, is_valid, resolved_file_type)
 pub fn parse_cfbf_stream(data: &[u8]) -> Option<(u64, bool, FileType)> {
-    if data.len() < 512 || &data[0..8] != &CFBF_MAGIC {
+    if data.len() < 512 || data[0..8] != CFBF_MAGIC {
         return None;
     }
 
     let sector_shift = u16::from_le_bytes([data[30], data[31]]) as usize;
-    if sector_shift < 9 || sector_shift > 12 {
+    if !(9..=12).contains(&sector_shift) {
         // Must be 512 (shift 9) or 4096 (shift 12)
         return None;
     }

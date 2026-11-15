@@ -699,7 +699,10 @@ impl Database {
 
         if !migration_14_applied {
             // 1. Add case_id to acquisition_records if missing
-            let _ = conn.execute("ALTER TABLE acquisition_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "ALTER TABLE acquisition_records ADD COLUMN case_id TEXT;",
+                [],
+            );
             let _ = conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_acq_records_case ON acquisition_records(case_id);",
                 [],
@@ -744,14 +747,20 @@ impl Database {
 
         if !migration_15_applied {
             // 1. Add case_id to drive_erasure_records if missing
-            let _ = conn.execute("ALTER TABLE drive_erasure_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "ALTER TABLE drive_erasure_records ADD COLUMN case_id TEXT;",
+                [],
+            );
             let _ = conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_drive_erasure_case ON drive_erasure_records(case_id);",
                 [],
             );
 
             // 2. Add case_id to file_erasure_records if missing
-            let _ = conn.execute("ALTER TABLE file_erasure_records ADD COLUMN case_id TEXT;", []);
+            let _ = conn.execute(
+                "ALTER TABLE file_erasure_records ADD COLUMN case_id TEXT;",
+                [],
+            );
             let _ = conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_file_erasure_case ON file_erasure_records(case_id);",
                 [],

@@ -1387,8 +1387,7 @@ impl DriveHardwareExecutor for WindowsDriveHardwareExecutor {
 
                     let remaining = (capacity - bytes_written_total) as usize;
                     let to_write = std::cmp::min(chunk_size, remaining);
-                    let to_write_aligned =
-                        ((to_write + sector_size - 1) / sector_size) * sector_size;
+                    let to_write_aligned = to_write.div_ceil(sector_size) * sector_size;
                     let actual_write = std::cmp::min(to_write_aligned, buffer.len()) as u32;
 
                     let mut written = 0u32;
@@ -1478,8 +1477,7 @@ impl DriveHardwareExecutor for WindowsDriveHardwareExecutor {
 
                         let remaining = (capacity - pass_written) as usize;
                         let to_write = std::cmp::min(chunk_size, remaining);
-                        let to_write_aligned =
-                            ((to_write + sector_size - 1) / sector_size) * sector_size;
+                        let to_write_aligned = to_write.div_ceil(sector_size) * sector_size;
                         let actual_write = std::cmp::min(to_write_aligned, buffer.len()) as u32;
 
                         let mut written = 0u32;

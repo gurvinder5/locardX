@@ -78,9 +78,10 @@ impl RecoveryEngine {
             .len();
 
         if total_bytes < 512 {
-            return Err(RecoveryFailureReason::CorruptImage(
-                format!("Evidence image is too small ({} bytes, minimum 512 bytes required)", total_bytes)
-            ));
+            return Err(RecoveryFailureReason::CorruptImage(format!(
+                "Evidence image is too small ({} bytes, minimum 512 bytes required)",
+                total_bytes
+            )));
         }
 
         let started_at = Utc::now().to_rfc3339();
@@ -110,7 +111,9 @@ impl RecoveryEngine {
                 entries_examined: 0,
                 deleted_candidates: 0,
                 files_validated: 0,
-                current_operation: Some("Scanning partition tables and volume boot headers".to_string()),
+                current_operation: Some(
+                    "Scanning partition tables and volume boot headers".to_string(),
+                ),
             });
 
             let mut files_validated_count = 0;
@@ -204,7 +207,10 @@ impl RecoveryEngine {
                     entries_examined: candidates_evaluated,
                     deleted_candidates: total_meta_candidates,
                     files_validated: files_validated_count,
-                    current_operation: Some(format!("Extracting & validating candidate: {}", meta_file.name)),
+                    current_operation: Some(format!(
+                        "Extracting & validating candidate: {}",
+                        meta_file.name
+                    )),
                 });
 
                 // Cap in-memory validation buffer to at most 16 MiB to prevent memory exhaustion
@@ -288,19 +294,36 @@ impl RecoveryEngine {
 
             progress_cb(RecoveryProgress {
                 operation_id: operation_id.to_string(),
-                bytes_scanned: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { total_bytes } else { total_bytes / 2 },
+                bytes_scanned: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly {
+                    total_bytes
+                } else {
+                    total_bytes / 2
+                },
                 total_bytes,
-                percentage: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { 100.0 } else { 50.0 },
+                percentage: if plan.options.recovery_mode == RecoveryMode::FilesystemOnly {
+                    100.0
+                } else {
+                    50.0
+                },
                 throughput_mbps: 0.0,
                 elapsed_seconds: start_instant.elapsed().as_secs_f64(),
                 files_found: recovered_files.len(),
                 stage: "Filesystem metadata analysis completed".to_string(),
                 filesystem_type: detected_fs_display,
-                phase: Some(if plan.options.recovery_mode == RecoveryMode::FilesystemOnly { "COMPLETED".to_string() } else { "RECOVERING".to_string() }),
+                phase: Some(
+                    if plan.options.recovery_mode == RecoveryMode::FilesystemOnly {
+                        "COMPLETED".to_string()
+                    } else {
+                        "RECOVERING".to_string()
+                    },
+                ),
                 entries_examined: candidates_evaluated,
                 deleted_candidates: total_meta_candidates,
                 files_validated: files_validated_count,
-                current_operation: Some(format!("Recovered {} files from filesystem metadata", recovered_files.len())),
+                current_operation: Some(format!(
+                    "Recovered {} files from filesystem metadata",
+                    recovered_files.len()
+                )),
             });
         }
 

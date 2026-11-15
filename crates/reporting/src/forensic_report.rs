@@ -200,6 +200,7 @@ impl ForensicReportGenerator {
     }
 
     /// Computes the deterministic SHA-256 canonical digest across substantive report fields.
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate_case_report_digest(
         report_id: &str,
         case_info: &CaseReportInfo,
@@ -337,7 +338,7 @@ impl ForensicReportGenerator {
                     acq.status,
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("## 3. Forensic File Recovery Operations\n\n");
@@ -382,7 +383,7 @@ impl ForensicReportGenerator {
                             f.sha256_hash
                         ));
                     }
-                    md.push_str("\n");
+                    md.push('\n');
                 }
             }
         }
@@ -407,7 +408,7 @@ impl ForensicReportGenerator {
                     era.verification_strategy,
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("## 5. Technical Chain of Custody\n\n");
@@ -429,7 +430,7 @@ impl ForensicReportGenerator {
                     c.audit_hash.as_deref().unwrap_or("N/A"),
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str("## 6. Audit & Cryptographic Integrity Verification\n\n");

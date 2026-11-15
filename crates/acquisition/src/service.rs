@@ -383,7 +383,10 @@ impl AcquisitionService {
                         audit_event,
                         actor_id,
                         Some(&plan.source.device_id),
-                        &format!("Acquisition ended for {}: {}", plan.source.device_id, reason),
+                        &format!(
+                            "Acquisition ended for {}: {}",
+                            plan.source.device_id, reason
+                        ),
                     )
                     .map(|ev| ev.current_hash)
                     .unwrap_or_else(|_| audit_event.to_string());

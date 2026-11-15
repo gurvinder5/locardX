@@ -381,7 +381,7 @@ impl OperationExecutor for FileEraserExecutor {
                         } else {
                             0.0
                         };
-                    let _ = on_progress_clone(
+                    on_progress_clone(
                         OperationProgress::new(
                             "Sanitizing",
                             format!(
@@ -510,7 +510,7 @@ impl OperationExecutor for FolderEraserExecutor {
                     } else {
                         10.0
                     };
-                    let _ = on_progress_clone(
+                    on_progress_clone(
                         OperationProgress::new(
                             "Sanitizing Folder",
                             format!("Processing item {}/{}: {}", processed, total, current_item),
@@ -652,7 +652,7 @@ impl OperationExecutor for DriveEraserSimulationExecutor {
             let on_prog_clone = Arc::clone(&on_progress);
             let progress_fn = move |p: locardx_drive_eraser::DriveEraseProgress| {
                 let pct: f32 = 15.0 + (p.percentage / 100.0) * 80.0;
-                let _ = on_prog_clone(
+                on_prog_clone(
                     OperationProgress::new(
                         "Simulating Sanitization",
                         format!(

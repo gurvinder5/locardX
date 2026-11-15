@@ -188,7 +188,10 @@ fn test_1_internal_system_drive_physicaldrive0_rejected() {
     let registry: Arc<dyn DeviceDiscoveryProvider> =
         Arc::new(MockHardwareRegistry::new(vec![sys_dev]));
     let inspect_res = inspect_physical_device(r"\\.\PhysicalDrive0", &registry, 512);
-    assert!(inspect_res.is_err(), "inspect_physical_device must reject PhysicalDrive0");
+    assert!(
+        inspect_res.is_err(),
+        "inspect_physical_device must reject PhysicalDrive0"
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -218,7 +221,11 @@ fn test_2_windows_boot_drive_c_rejected() {
     assert!(res.is_err(), "Device hosting C:\\ must be hard-blocked");
     match res.unwrap_err() {
         DriveEraseFailureReason::SystemOrBootDeviceProtected(msg) => {
-            assert!(msg.contains("C:"), "Error message must indicate C: protection: {}", msg);
+            assert!(
+                msg.contains("C:"),
+                "Error message must indicate C: protection: {}",
+                msg
+            );
         }
         other => panic!("Expected SystemOrBootDeviceProtected, got: {:?}", other),
     }
@@ -235,9 +242,16 @@ fn test_3_logical_volume_c_rejected() {
         assert!(res.is_err(), "Target '{}' must be rejected", target);
         match res.unwrap_err() {
             DriveEraseFailureReason::LogicalVolumeTargetRejected(msg) => {
-                assert!(msg.contains("logical volume"), "Message must explain logical volume: {}", msg);
+                assert!(
+                    msg.contains("logical volume"),
+                    "Message must explain logical volume: {}",
+                    msg
+                );
             }
-            other => panic!("Expected LogicalVolumeTargetRejected for '{}', got: {:?}", target, other),
+            other => panic!(
+                "Expected LogicalVolumeTargetRejected for '{}', got: {:?}",
+                target, other
+            ),
         }
     }
 }
@@ -253,9 +267,16 @@ fn test_4_logical_volume_d_rejected() {
         assert!(res.is_err(), "Target '{}' must be rejected", target);
         match res.unwrap_err() {
             DriveEraseFailureReason::LogicalVolumeTargetRejected(msg) => {
-                assert!(msg.contains("logical volume"), "Message must explain logical volume: {}", msg);
+                assert!(
+                    msg.contains("logical volume"),
+                    "Message must explain logical volume: {}",
+                    msg
+                );
             }
-            other => panic!("Expected LogicalVolumeTargetRejected for '{}', got: {:?}", target, other),
+            other => panic!(
+                "Expected LogicalVolumeTargetRejected for '{}', got: {:?}",
+                target, other
+            ),
         }
     }
 }
@@ -267,12 +288,20 @@ fn test_4_logical_volume_d_rejected() {
 fn test_5_external_usb_drive_authorized() {
     let usb_dev = create_test_usb_flash_drive();
     let res = is_safe_external_erase_target(&usb_dev);
-    assert!(res.is_ok(), "External USB flash drive must be authorized for erasure: {:?}", res);
+    assert!(
+        res.is_ok(),
+        "External USB flash drive must be authorized for erasure: {:?}",
+        res
+    );
 
     let registry: Arc<dyn DeviceDiscoveryProvider> =
         Arc::new(MockHardwareRegistry::new(vec![usb_dev.clone()]));
     let inspect_res = inspect_physical_device(r"\\.\PhysicalDrive1", &registry, 512);
-    assert!(inspect_res.is_ok(), "inspect_physical_device must succeed for external USB: {:?}", inspect_res);
+    assert!(
+        inspect_res.is_ok(),
+        "inspect_physical_device must succeed for external USB: {:?}",
+        inspect_res
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -282,12 +311,20 @@ fn test_5_external_usb_drive_authorized() {
 fn test_6_external_sd_card_authorized() {
     let sd_dev = create_test_sd_card();
     let res = is_safe_external_erase_target(&sd_dev);
-    assert!(res.is_ok(), "External SD card must be authorized for erasure: {:?}", res);
+    assert!(
+        res.is_ok(),
+        "External SD card must be authorized for erasure: {:?}",
+        res
+    );
 
     let registry: Arc<dyn DeviceDiscoveryProvider> =
         Arc::new(MockHardwareRegistry::new(vec![sd_dev.clone()]));
     let inspect_res = inspect_physical_device(r"\\.\PhysicalDrive2", &registry, 512);
-    assert!(inspect_res.is_ok(), "inspect_physical_device must succeed for external SD card: {:?}", inspect_res);
+    assert!(
+        inspect_res.is_ok(),
+        "inspect_physical_device must succeed for external SD card: {:?}",
+        inspect_res
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -296,16 +333,26 @@ fn test_6_external_sd_card_authorized() {
 #[test]
 fn test_7_external_drive_missing_serial_verified_with_discrepancy() {
     let planned_dev = create_test_sd_card();
-    let planned_snap = PhysicalDeviceSnapshot::from_device(&planned_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let planned_snap = PhysicalDeviceSnapshot::from_device(&planned_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let mut live_dev = planned_dev.clone();
     live_dev.serial_number = None; // Bridge omitted serial number on live re-probe
-    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let outcome = planned_snap.revalidate_identity(&live_snap);
-    assert!(outcome.is_verified(), "Must be verified despite missing serial: {:?}", outcome);
+    assert!(
+        outcome.is_verified(),
+        "Must be verified despite missing serial: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::VerifiedWithDiscrepancy(discrepancies) => {
             assert!(!discrepancies.is_empty());
@@ -324,19 +371,31 @@ fn test_7_external_drive_missing_serial_verified_with_discrepancy() {
 fn test_8_external_drive_usb_bridge_serial_discrepancy_verified_with_discrepancy() {
     let mut planned_dev = create_test_sd_card();
     planned_dev.serial_number = Some("GENERIC_USB_CARD_READER".to_string());
-    let planned_snap = PhysicalDeviceSnapshot::from_device(&planned_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let planned_snap = PhysicalDeviceSnapshot::from_device(&planned_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let mut live_dev = planned_dev.clone();
     live_dev.serial_number = Some("000000000502".to_string()); // Live bridge returned synthetic numeric serial
-    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let outcome = planned_snap.revalidate_identity(&live_snap);
-    assert!(outcome.is_verified(), "Must be verified for external media serial shift: {:?}", outcome);
+    assert!(
+        outcome.is_verified(),
+        "Must be verified for external media serial shift: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::VerifiedWithDiscrepancy(discrepancies) => {
-            assert!(discrepancies.iter().any(|d| d.contains("serial number discrepancy")));
+            assert!(discrepancies
+                .iter()
+                .any(|d| d.contains("serial number discrepancy")));
         }
         other => panic!("Expected VerifiedWithDiscrepancy, got: {:?}", other),
     }
@@ -350,19 +409,31 @@ fn test_8_external_drive_usb_bridge_serial_discrepancy_verified_with_discrepancy
 #[test]
 fn test_9_internal_fixed_drive_serial_discrepancy_strictly_rejected() {
     let fixed_dev = create_test_internal_fixed_drive();
-    let planned_snap = PhysicalDeviceSnapshot::from_device(&fixed_dev, 512)
-        .with_observations(Some(4096), Some("SATA".to_string()), false);
+    let planned_snap = PhysicalDeviceSnapshot::from_device(&fixed_dev, 512).with_observations(
+        Some(4096),
+        Some("SATA".to_string()),
+        false,
+    );
 
     let mut live_dev = fixed_dev.clone();
     live_dev.serial_number = Some("DIFFERENT_SERIAL_SUBSTITUTION".to_string());
-    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512)
-        .with_observations(Some(4096), Some("SATA".to_string()), false);
+    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512).with_observations(
+        Some(4096),
+        Some("SATA".to_string()),
+        false,
+    );
 
     let outcome = planned_snap.revalidate_identity(&live_snap);
-    assert!(outcome.is_failed(), "Internal fixed drive with serial discrepancy MUST fail: {:?}", outcome);
+    assert!(
+        outcome.is_failed(),
+        "Internal fixed drive with serial discrepancy MUST fail: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::Failed(msg) => {
-            assert!(msg.contains("internal fixed storage") || msg.contains("serial number changed"));
+            assert!(
+                msg.contains("internal fixed storage") || msg.contains("serial number changed")
+            );
         }
         other => panic!("Expected Failed, got: {:?}", other),
     }
@@ -376,19 +447,33 @@ fn test_9_internal_fixed_drive_serial_discrepancy_strictly_rejected() {
 #[test]
 fn test_10_capacity_change_triggers_toctou_failure() {
     let usb_dev = create_test_usb_flash_drive();
-    let planned_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let planned_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let mut live_dev = usb_dev.clone();
     live_dev.capacity_bytes = 64_000_000_000; // Capacity doubled (different media inserted)
-    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let live_snap = PhysicalDeviceSnapshot::from_device(&live_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
     let outcome = planned_snap.revalidate_identity(&live_snap);
-    assert!(outcome.is_failed(), "Capacity change MUST fail TOCTOU revalidation: {:?}", outcome);
+    assert!(
+        outcome.is_failed(),
+        "Capacity change MUST fail TOCTOU revalidation: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::Failed(msg) => {
-            assert!(msg.contains("capacity changed"), "Message must explain capacity mutation: {}", msg);
+            assert!(
+                msg.contains("capacity changed"),
+                "Message must explain capacity mutation: {}",
+                msg
+            );
         }
         other => panic!("Expected Failed, got: {:?}", other),
     }
@@ -400,17 +485,31 @@ fn test_10_capacity_change_triggers_toctou_failure() {
 #[test]
 fn test_11_bus_type_change_triggers_toctou_failure() {
     let usb_dev = create_test_usb_flash_drive();
-    let planned_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512)
-        .with_observations(Some(512), Some("USB".to_string()), false);
+    let planned_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512).with_observations(
+        Some(512),
+        Some("USB".to_string()),
+        false,
+    );
 
-    let live_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512)
-        .with_observations(Some(512), Some("NVMe".to_string()), false); // Bus changed from USB to NVMe
+    let live_snap = PhysicalDeviceSnapshot::from_device(&usb_dev, 512).with_observations(
+        Some(512),
+        Some("NVMe".to_string()),
+        false,
+    ); // Bus changed from USB to NVMe
 
     let outcome = planned_snap.revalidate_identity(&live_snap);
-    assert!(outcome.is_failed(), "Bus type change MUST fail TOCTOU revalidation: {:?}", outcome);
+    assert!(
+        outcome.is_failed(),
+        "Bus type change MUST fail TOCTOU revalidation: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::Failed(msg) => {
-            assert!(msg.contains("Bus type mutated"), "Message must explain bus mutation: {}", msg);
+            assert!(
+                msg.contains("Bus type mutated"),
+                "Message must explain bus mutation: {}",
+                msg
+            );
         }
         other => panic!("Expected Failed, got: {:?}", other),
     }
@@ -428,7 +527,11 @@ fn test_12_device_disconnection_triggers_failure() {
     disconnected_snap.exists = false;
 
     let outcome = planned_snap.revalidate_identity(&disconnected_snap);
-    assert!(outcome.is_failed(), "Disconnected device MUST fail: {:?}", outcome);
+    assert!(
+        outcome.is_failed(),
+        "Disconnected device MUST fail: {:?}",
+        outcome
+    );
     match outcome {
         IdentityRevalidationOutcome::Failed(msg) => {
             assert!(msg.contains("no longer exists") || msg.contains("disconnected"));
@@ -479,7 +582,10 @@ fn test_14_hardware_permit_single_use_enforced() {
 
     // Second consumption MUST fail closed with PermitAlreadyConsumed
     let consume2 = permit.consume();
-    assert!(consume2.is_err(), "Second permit consumption must fail closed");
+    assert!(
+        consume2.is_err(),
+        "Second permit consumption must fail closed"
+    );
     match consume2.unwrap_err() {
         DriveEraseFailureReason::PermitAlreadyConsumed(id) => {
             assert_eq!(id, permit.permit_id());
@@ -536,7 +642,10 @@ fn test_16_concurrency_lock_prevents_simultaneous_erasure() {
 
     // Second concurrent lock acquisition on same device MUST fail
     let guard2 = registry.acquire_lock(target);
-    assert!(guard2.is_err(), "Concurrent lock on same device must fail closed");
+    assert!(
+        guard2.is_err(),
+        "Concurrent lock on same device must fail closed"
+    );
     match guard2.unwrap_err() {
         DriveEraseFailureReason::ExclusiveAccessFailed(msg) => {
             assert!(msg.contains("already being sanitized"));
@@ -546,8 +655,14 @@ fn test_16_concurrency_lock_prevents_simultaneous_erasure() {
 
     // Drop guard1 and verify target can now be locked again
     drop(guard1);
-    assert!(!registry.is_locked(target), "Lock must be released upon guard drop");
+    assert!(
+        !registry.is_locked(target),
+        "Lock must be released upon guard drop"
+    );
 
     let guard3 = registry.acquire_lock(target);
-    assert!(guard3.is_ok(), "Re-acquiring lock after release must succeed");
+    assert!(
+        guard3.is_ok(),
+        "Re-acquiring lock after release must succeed"
+    );
 }

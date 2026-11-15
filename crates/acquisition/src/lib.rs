@@ -18,10 +18,12 @@ pub use models::{
     AcquisitionProgress, AcquisitionRecordDto, AcquisitionResult, AcquisitionStatus,
     ArtifactCleanupStatus,
 };
-pub use writer::{delete_artifact_verified, staging_path_for, ArtifactCleanupResult, RawImageWriter};
 pub use platform::{
     AcquisitionSourceReader, CompositeAcquisitionReader, FaultInjectableAcquisitionReader,
     FaultInjectionMode, ReadOnlyDeviceStream, RealAcquisitionReader,
 };
 pub use service::AcquisitionService;
 pub use source::{create_source_snapshot, revalidate_source_snapshot, validate_source_device_id};
+pub use writer::{
+    delete_artifact_verified, staging_path_for, ArtifactCleanupResult, RawImageWriter,
+};

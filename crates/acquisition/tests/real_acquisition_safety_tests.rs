@@ -278,7 +278,8 @@ fn test_h_failed_acquisition_removes_only_incomplete_target() {
 #[test]
 fn test_i_source_is_never_opened_with_write_access() {
     // Audit reader methods to verify only read_only interface exists
-    let reader = FaultInjectableAcquisitionReader::new_with_test_device(r"\\.\PhysicalDrive1", 1024);
+    let reader =
+        FaultInjectableAcquisitionReader::new_with_test_device(r"\\.\PhysicalDrive1", 1024);
     let stream_res = reader.open_read_only(r"\\.\PhysicalDrive1");
     assert!(stream_res.is_ok());
 
@@ -417,5 +418,3 @@ fn test_m_directory_destination_is_rejected() {
         Err(AcquisitionFailureReason::InvalidDestination(_))
     ));
 }
-
-

@@ -190,14 +190,12 @@ impl CaseService {
     /// Fails closed with appropriate security error if case does not exist or is closed.
     pub fn validate_case_for_operation(&self, case_id: Option<&str>) -> Result<Case, LocardError> {
         let case = match case_id {
-            Some(id) if !id.trim().is_empty() => {
-                self.get_case(id.trim())?.ok_or_else(|| {
-                    LocardError::Operation(format!(
-                        "CASE_NOT_FOUND: Investigation case '{}' does not exist.",
-                        id
-                    ))
-                })?
-            }
+            Some(id) if !id.trim().is_empty() => self.get_case(id.trim())?.ok_or_else(|| {
+                LocardError::Operation(format!(
+                    "CASE_NOT_FOUND: Investigation case '{}' does not exist.",
+                    id
+                ))
+            })?,
             _ => self.require_active_case()?,
         };
 
@@ -212,9 +210,11 @@ impl CaseService {
     }
 
     /// Validates case context for operations that permit either case association or authorized standalone execution.
+    ///
     /// If an explicit `case_id` is passed:
     ///   - If "standalone" or empty: returns `Ok(None)` (explicit standalone).
     ///   - Otherwise, strictly validates the case exists and is open; rejects if closed or non-existent!
+    ///
     /// If `case_id` is None:
     ///   - Checks if an active case is selected.
     ///   - If active case is selected and open: returns `Ok(Some(active_case))`.
@@ -247,7 +247,9 @@ impl CaseService {
             }
             None => {
                 if let Some(active) = self.get_active_case()? {
-                    if active.status == CaseStatus::Completed || active.status == CaseStatus::Archived {
+                    if active.status == CaseStatus::Completed
+                        || active.status == CaseStatus::Archived
+                    {
                         return Err(LocardError::SecurityViolation(format!(
                             "CASE_CLOSED: Active case '{}' ({}) is closed ({}). Cannot start new operations under a closed case.",
                             active.title, active.case_reference, active.status
@@ -598,7 +600,10 @@ impl CaseService {
             if existing.closed_at.is_none() {
                 existing.closed_at = Some(now.clone());
             }
-        } else if matches!(previous_status, CaseStatus::Completed | CaseStatus::Archived) {
+        } else if matches!(
+            previous_status,
+            CaseStatus::Completed | CaseStatus::Archived
+        ) {
             // Reopening workflow: require Administrator or Investigator
             if actor.role != UserRole::Administrator && actor.role != UserRole::Investigator {
                 return Err(LocardError::SecurityViolation(
@@ -963,7 +968,6 @@ impl CaseService {
         Ok(())
     }
 
-
     /// Lists all operations associated with a case.
     pub fn list_case_operations(&self, case_id: &str) -> Result<Vec<CaseOperation>, LocardError> {
         self.db.with_conn(|conn| {
@@ -989,7 +993,10 @@ impl CaseService {
     }
 
     /// Lists all forensic bitstream acquisitions associated with a case.
-    pub fn list_case_acquisitions(&self, case_id: &str) -> Result<Vec<CaseAcquisitionItem>, LocardError> {
+    pub fn list_case_acquisitions(
+        &self,
+        case_id: &str,
+    ) -> Result<Vec<CaseAcquisitionItem>, LocardError> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT acquisition_id, operation_id, source_device_id, source_display_name,
@@ -1020,7 +1027,10 @@ impl CaseService {
     }
 
     /// Lists all forensic recovery jobs associated with a case.
-    pub fn list_case_recoveries(&self, case_id: &str) -> Result<Vec<CaseRecoveryItem>, LocardError> {
+    pub fn list_case_recoveries(
+        &self,
+        case_id: &str,
+    ) -> Result<Vec<CaseRecoveryItem>, LocardError> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT job_id, operation_id, source_image_path, source_image_sha256,

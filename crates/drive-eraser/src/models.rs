@@ -413,16 +413,12 @@ impl std::fmt::Display for DriveEraseFailureReason {
             Self::ConfirmationExpired(msg) => write!(f, "Confirmation challenge expired: {}", msg),
             Self::Cancelled => write!(f, "Operation cancelled cooperatively by operator"),
             Self::SimulationError(msg) => write!(f, "Simulation error: {}", msg),
-            Self::RealHardwareExecutionDisabled(msg) => write!(
-                f,
-                "Real hardware execution is disabled: {}",
-                msg
-            ),
-            Self::RealHardwareExecutionNotEnabled(msg) => write!(
-                f,
-                "Real hardware execution is not enabled: {}",
-                msg
-            ),
+            Self::RealHardwareExecutionDisabled(msg) => {
+                write!(f, "Real hardware execution is disabled: {}", msg)
+            }
+            Self::RealHardwareExecutionNotEnabled(msg) => {
+                write!(f, "Real hardware execution is not enabled: {}", msg)
+            }
             Self::CapabilityUnknown(msg) => {
                 write!(f, "Device capability is unknown (failing closed): {}", msg)
             }
@@ -574,7 +570,10 @@ impl PhysicalDeviceSnapshot {
                 DeviceType::Usb | DeviceType::MemoryCard | DeviceType::ExternalStorage
             )
             || matches!(
-                self.bus_type.as_deref().map(|b| b.to_ascii_uppercase()).as_deref(),
+                self.bus_type
+                    .as_deref()
+                    .map(|b| b.to_ascii_uppercase())
+                    .as_deref(),
                 Some("USB") | Some("SD") | Some("MMC") | Some("1394")
             )
     }
@@ -605,7 +604,10 @@ impl PhysicalDeviceSnapshot {
     ///   - Strictly required for internal/fixed media.
     ///   - On external/removable media (USB mass storage bridges, generic USB drives, SD card readers),
     ///     serial discrepancies are recorded as non-fatal audit warnings (`VerifiedWithDiscrepancy`).
-    pub fn revalidate_identity(&self, live: &PhysicalDeviceSnapshot) -> IdentityRevalidationOutcome {
+    pub fn revalidate_identity(
+        &self,
+        live: &PhysicalDeviceSnapshot,
+    ) -> IdentityRevalidationOutcome {
         if !live.exists {
             return IdentityRevalidationOutcome::Failed(format!(
                 "Target device '{}' no longer exists or was disconnected",

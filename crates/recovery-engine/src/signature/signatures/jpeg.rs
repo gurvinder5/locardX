@@ -72,7 +72,8 @@ pub fn parse_jpeg_stream(data: &[u8]) -> Option<(u64, bool)> {
         let is_misaligned = if next_marker_pos < data.len() {
             data[next_marker_pos] != 0xFF
         } else {
-            next_marker_pos > data.len() || (data.len() >= 2 && data[data.len() - 2] == 0xFF && data[data.len() - 1] == 0xD9)
+            next_marker_pos > data.len()
+                || (data.len() >= 2 && data[data.len() - 2] == 0xFF && data[data.len() - 1] == 0xD9)
         };
 
         if is_misaligned {
@@ -153,4 +154,3 @@ pub fn parse_jpeg_stream(data: &[u8]) -> Option<(u64, bool)> {
 
     None
 }
-

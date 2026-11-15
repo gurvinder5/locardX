@@ -5,7 +5,7 @@ pub const DEFAULT_CLUSTER_SIZE: u64 = 4096;
 
 /// Evaluates whether a contiguous byte span aligns with file storage clusters.
 pub fn is_cluster_aligned(offset: u64, cluster_size: u64) -> bool {
-    offset % cluster_size == 0
+    offset.is_multiple_of(cluster_size)
 }
 
 /// Creates a new FileFragment descriptor.

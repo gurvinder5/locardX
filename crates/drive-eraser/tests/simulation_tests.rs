@@ -319,7 +319,11 @@ async fn test_sanitization_plan_enforcement() {
     let err_empty = service.get_plan("").await.unwrap_err();
     match err_empty {
         locardx_common::LocardError::SecurityViolation(msg) => {
-            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+            assert!(
+                msg.contains("SANITIZATION_PLAN_REQUIRED"),
+                "Expected SANITIZATION_PLAN_REQUIRED, got: {}",
+                msg
+            );
         }
         other => panic!("Expected SecurityViolation, got {:?}", other),
     }
@@ -328,7 +332,11 @@ async fn test_sanitization_plan_enforcement() {
     let err_missing = service.get_plan("non-existent-plan-id").await.unwrap_err();
     match err_missing {
         locardx_common::LocardError::SecurityViolation(msg) => {
-            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+            assert!(
+                msg.contains("SANITIZATION_PLAN_REQUIRED"),
+                "Expected SANITIZATION_PLAN_REQUIRED, got: {}",
+                msg
+            );
         }
         other => panic!("Expected SecurityViolation, got {:?}", other),
     }
@@ -350,7 +358,11 @@ async fn test_sanitization_plan_enforcement() {
     assert!(exec_missing.is_err());
     match exec_missing.unwrap_err() {
         locardx_common::LocardError::SecurityViolation(msg) => {
-            assert!(msg.contains("SANITIZATION_PLAN_REQUIRED"), "Expected SANITIZATION_PLAN_REQUIRED, got: {}", msg);
+            assert!(
+                msg.contains("SANITIZATION_PLAN_REQUIRED"),
+                "Expected SANITIZATION_PLAN_REQUIRED, got: {}",
+                msg
+            );
         }
         other => panic!("Expected SecurityViolation, got {:?}", other),
     }
@@ -393,4 +405,3 @@ async fn test_sanitization_plan_enforcement() {
         assert!(err_exec.is_ok());
     }
 }
-

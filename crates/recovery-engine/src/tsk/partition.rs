@@ -68,7 +68,7 @@ fn scan_gpt<R: Read + Seek>(
     let num_entries = u32::from_le_bytes(header[80..84].try_into().unwrap()) as usize;
     let entry_size = u32::from_le_bytes(header[84..88].try_into().unwrap()) as usize;
 
-    if entry_size < 128 || entry_size > 4096 || num_entries == 0 || num_entries > 256 {
+    if !(128..=4096).contains(&entry_size) || num_entries == 0 || num_entries > 256 {
         return Ok(Vec::new());
     }
 
@@ -107,7 +107,7 @@ fn scan_gpt<R: Read + Seek>(
 
             // Name in UTF-16LE
             let mut name_u16 = Vec::new();
-            for chunk in entry_buf[56..128.min(entry_size)].chunks_exact(2) {
+            for chunk in entry_buf[56..128.min(entry_size)].as_chunks::<2>().0 {
                 let code = u16::from_le_bytes([chunk[0], chunk[1]]);
                 if code == 0 {
                     break;

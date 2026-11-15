@@ -5,9 +5,8 @@ use locardx_device_manager::{
     DeviceClassification, DeviceManagerService, DeviceType, PhysicalDevice,
 };
 use locardx_drive_eraser::{
-    detect_device_capabilities, generate_drive_erase_plan,
-    DriveEraseRequest, DriveEraserService, ExecutionMode, MockDeviceRegistry,
-    PhysicalDeviceSnapshot,
+    detect_device_capabilities, generate_drive_erase_plan, DriveEraseRequest, DriveEraserService,
+    ExecutionMode, MockDeviceRegistry, PhysicalDeviceSnapshot,
 };
 use locardx_security::SafetyEngine;
 use std::sync::Arc;
@@ -98,7 +97,9 @@ async fn test_execution_with_real_hardware_mode_is_forbidden() {
     match res.unwrap_err() {
         locardx_common::LocardError::SecurityViolation(msg) => {
             assert!(
-                msg.contains("Real hardware execution is not permitted via the simulation endpoint"),
+                msg.contains(
+                    "Real hardware execution is not permitted via the simulation endpoint"
+                ),
                 "Expected simulation restriction message, got: {}",
                 msg
             );
@@ -127,7 +128,10 @@ fn test_planner_authorizes_real_hardware_mode_for_data_drive() {
     let caps = detect_device_capabilities(&device);
 
     let res = generate_drive_erase_plan(snapshot, caps, None, ExecutionMode::RealHardware);
-    assert!(res.is_ok(), "Expected real hardware plan generation to succeed for data drive");
+    assert!(
+        res.is_ok(),
+        "Expected real hardware plan generation to succeed for data drive"
+    );
     let plan = res.unwrap();
     assert_eq!(plan.execution_mode, ExecutionMode::RealHardware);
 }

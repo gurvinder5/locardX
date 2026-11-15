@@ -19,7 +19,6 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 locardx-auth = { workspace = true }
