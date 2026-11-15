@@ -40,9 +40,37 @@ export function extractErrorMessage(err: unknown): string {
 }
 
 export function formatRecoveryFailureReason(reason: unknown): string {
-  if (!reason) return 'Unknown recovery failure';
+  if (!reason) return 'Recovery operation did not complete successfully.';
   if (typeof reason === 'string') return reason;
   if (typeof reason === 'object') {
+    // Handle Rust externally tagged enum representation: e.g. { read_error: "..." }
+    const keys = Object.keys(reason as object);
+    if (keys.length === 1) {
+      const key = keys[0];
+      const val = (reason as Record<string, unknown>)[key];
+      const detailStr = typeof val === 'string' ? val : JSON.stringify(val);
+      switch (key.toLowerCase()) {
+        case 'read_error':
+        case 'readerror':
+          return `Read I/O failure on evidence image: ${detailStr}`;
+        case 'image_not_found':
+        case 'imagenotfound':
+          return `Evidence image not found: ${detailStr}`;
+        case 'corrupted_image':
+        case 'corruptedimage':
+          return `Evidence image corruption detected: ${detailStr}`;
+        case 'unsupported_filesystem':
+        case 'unsupportedfilesystem':
+          return `Unsupported filesystem: ${detailStr}`;
+        case 'filesystem_analysis_failed':
+        case 'filesystemanalysisfailed':
+          return `Filesystem analysis failed: ${detailStr}`;
+        case 'cancelled':
+          return 'Recovery operation was cancelled by operator';
+        default:
+          return `${key}: ${detailStr}`;
+      }
+    }
     if ('type' in reason) {
       const details = (reason as any).details;
       switch ((reason as any).type) {
@@ -293,7 +321,9 @@ export const useRecoveryStore = create<RecoveryStoreState>((set, get) => ({
 
       clearInterval(pollTimer);
 
-      if (res.status === 'Completed') {
+      const statusLower = (res.status || '').toLowerCase();
+
+      if (statusLower === 'completed') {
         const scopedJob = res.job_id ? await getRecoveryJob(res.job_id).catch(() => null) : null;
         const finalResult = scopedJob || res;
         set((state) => ({
@@ -301,9 +331,10 @@ export const useRecoveryStore = create<RecoveryStoreState>((set, get) => ({
           workflowState: 'COMPLETED',
           isScanning: false,
           activeOpId: null,
+          error: null,
           jobs: [finalResult, ...state.jobs.filter((j) => j.job_id !== finalResult.job_id)],
         }));
-      } else if (res.status === 'Cancelled') {
+      } else if (statusLower === 'cancelled') {
         set((state) => ({
           workflowState: 'CANCELLED',
           isScanning: false,

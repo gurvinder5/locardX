@@ -63,7 +63,7 @@ impl AcquisitionArtifact {
         })?;
 
         let mut hasher = StreamingSha256Hasher::new();
-        let mut buffer = [0u8; 1024 * 1024];
+        let mut buffer = vec![0u8; 1024 * 1024];
 
         loop {
             let n = file.read(&mut buffer).map_err(|e| {

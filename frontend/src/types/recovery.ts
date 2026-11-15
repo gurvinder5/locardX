@@ -123,7 +123,13 @@ export type RecoveryStatus =
   | 'Scanning'
   | 'Completed'
   | 'Failed'
-  | 'Cancelled';
+  | 'Cancelled'
+  | 'pending'
+  | 'validating'
+  | 'scanning'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface RecoveryResult {
   job_id: string;

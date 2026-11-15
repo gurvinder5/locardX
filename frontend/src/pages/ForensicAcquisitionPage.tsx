@@ -920,7 +920,10 @@ export const ForensicAcquisitionPage: React.FC = () => {
                 {historyRecords.map((rec) => (
                   <tr key={rec.acquisition_id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">
-                      {new Date(rec.created_at).toLocaleString()}
+                      {(() => {
+                        const ts = rec.started_at || rec.created_at || rec.completed_at;
+                        return ts && !isNaN(Date.parse(ts)) ? new Date(ts).toLocaleString() : '—';
+                      })()}
                     </td>
                     <td className="py-2.5 px-4 font-semibold text-sky-800 whitespace-nowrap">
                       {rec.case_id ? (

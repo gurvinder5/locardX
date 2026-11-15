@@ -29,6 +29,7 @@ chrono = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 rusqlite = { workspace = true }
+rfd = "0.18.0"
 
 [build-dependencies]
 tauri-build = { workspace = true }

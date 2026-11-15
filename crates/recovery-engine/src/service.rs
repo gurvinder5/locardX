@@ -12,7 +12,7 @@ use locardx_database::Database;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -23,6 +23,17 @@ pub struct RecoveryService {
     audit: Arc<AuditService>,
     active_cancellations: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     latest_progress: Arc<Mutex<HashMap<String, RecoveryProgress>>>,
+}
+
+/// Strips the Windows UNC verbatim prefix `\\?\` if present, allowing standard OS APIs and
+/// Windows Explorer to accept the path without IO errors.
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
 }
 
 impl RecoveryService {
@@ -103,9 +114,9 @@ impl RecoveryService {
         }
 
         let fmt = artifact.image_format.to_lowercase();
-        if fmt != "raw" && fmt != "dd" {
+        if fmt != "raw" && fmt != "dd" && fmt != "img" && fmt != "bin" && fmt != "iso" && fmt != "image" {
             return Err(LocardError::Operation(format!(
-                "Unsupported image format '{}'; only 'raw' or 'dd' are accepted",
+                "Unsupported image format '{}'; raw, dd, img, bin, or iso are accepted",
                 artifact.image_format
             )));
         }
@@ -849,6 +860,110 @@ impl RecoveryService {
         })
     }
 
+    /// Imports an existing raw disk image (.raw, .dd, .img, .bin, .iso, etc.) from the local computer.
+    /// Performs streaming cryptographic hash verification, registers the source in SQLite, and audits the event.
+    pub fn import_local_image(
+        &self,
+        file_path: &str,
+        actor_id: Option<&str>,
+    ) -> Result<RecoverySourceSnapshot, LocardError> {
+        let trimmed = file_path.trim();
+        if trimmed.is_empty() {
+            return Err(LocardError::Operation("File path cannot be empty".to_string()));
+        }
+
+        let p = Path::new(trimmed);
+        if !p.exists() {
+            return Err(LocardError::Operation(format!(
+                "Image file does not exist: {}",
+                trimmed
+            )));
+        }
+
+        let meta = std::fs::metadata(p).map_err(|e| {
+            LocardError::Operation(format!("Cannot read metadata for '{}': {}", trimmed, e))
+        })?;
+
+        if !meta.is_file() {
+            return Err(LocardError::Operation(format!(
+                "Target path is a directory or device, not a regular file: {}",
+                trimmed
+            )));
+        }
+
+        let size_bytes = meta.len();
+        if size_bytes == 0 {
+            return Err(LocardError::Operation(format!(
+                "Image file is empty (0 bytes): {}",
+                trimmed
+            )));
+        }
+
+        let canonical_str = p
+            .canonicalize()
+            .map(|c| c.to_string_lossy().to_string())
+            .unwrap_or_else(|_| trimmed.to_string());
+
+        let file_name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("disk.raw")
+            .to_string();
+
+        let sha256 = crate::source::compute_streaming_sha256(p).map_err(|e| {
+            LocardError::Operation(format!("Failed to compute SHA-256 for image: {}", e))
+        })?;
+
+        let source_id = format!("src-local-{}", Uuid::new_v4());
+        let acquisition_id = format!("acq-local-{}", Uuid::new_v4());
+        let verified_at = Utc::now().to_rfc3339();
+
+        let snapshot = RecoverySourceSnapshot {
+            source_id: source_id.clone(),
+            acquisition_id: acquisition_id.clone(),
+            image_path: canonical_str.clone(),
+            image_size_bytes: size_bytes,
+            image_sha256: sha256.clone(),
+            original_device_id: format!("Local File ({})", file_name),
+            original_serial: None,
+            verified_at: verified_at.clone(),
+            is_trusted: true,
+        };
+
+        self.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO recovery_sources (
+                    source_id, acquisition_id, image_path, image_size_bytes, image_sha256,
+                    original_device_id, original_serial, verified_at, is_trusted
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    snapshot.source_id,
+                    snapshot.acquisition_id,
+                    snapshot.image_path,
+                    snapshot.image_size_bytes as i64,
+                    snapshot.image_sha256,
+                    snapshot.original_device_id,
+                    snapshot.original_serial,
+                    snapshot.verified_at,
+                    if snapshot.is_trusted { 1 } else { 0 },
+                ],
+            )?;
+            Ok(())
+        })?;
+
+        let _ = self.audit.log_structured_event(
+            "LOCAL_EVIDENCE_IMAGE_IMPORTED",
+            actor_id,
+            Some(&canonical_str),
+            &format!(
+                "Imported local raw disk image '{}' ({} bytes, SHA-256: {})",
+                file_name, size_bytes, sha256
+            ),
+        );
+
+        Ok(snapshot)
+    }
+
     /// Exports all recovered files from an existing job to a new destination folder.
     pub fn export_recovered_files(
         &self,
@@ -931,9 +1046,9 @@ impl RecoveryService {
             ))
         })?;
 
-        let workspace_canonical = workspace_base.canonicalize().map_err(|e| {
+        let workspace_canonical = strip_verbatim_prefix(&workspace_base.canonicalize().map_err(|e| {
             LocardError::Operation(format!("Failed to canonicalize workspace directory: {}", e))
-        })?;
+        })?);
 
         let cat_folder = rec_file.category.to_string().to_lowercase();
         let target_dir = workspace_canonical.join(&cat_folder);
@@ -946,7 +1061,7 @@ impl RecoveryService {
 
         // Sanitize suggested filename to prevent path traversal
         let safe_name = crate::engine::sanitize_filename(&rec_file.suggested_filename);
-        let target_path = target_dir.join(&safe_name);
+        let target_path = strip_verbatim_prefix(&target_dir.join(&safe_name));
 
         // Security check: verify that target path stays within workspace_canonical
         if !target_path.starts_with(&workspace_canonical) {
@@ -1005,9 +1120,10 @@ impl RecoveryService {
     /// Safely opens a recovered artifact with the OS default application.
     pub fn open_recovered_file(&self, job_id: &str, file_id: &str) -> Result<String, LocardError> {
         let path = self.materialize_recovered_file(job_id, file_id, None)?;
+        let clean_path = strip_verbatim_prefix(&path);
 
         // Safety check: reject direct execution of raw executable binaries
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+        if let Some(ext) = clean_path.extension().and_then(|s| s.to_str()) {
             let ext_lower = ext.to_lowercase();
             if matches!(
                 ext_lower.as_str(),
@@ -1019,14 +1135,14 @@ impl RecoveryService {
             }
         }
 
-        opener::open(&path).map_err(|e| {
+        opener::open(&clean_path).map_err(|e| {
             LocardError::Operation(format!(
                 "Operating system failed to open file with default application: {}",
                 e
             ))
         })?;
 
-        Ok(path.to_string_lossy().to_string())
+        Ok(clean_path.to_string_lossy().to_string())
     }
 
     /// Safely reveals a recovered artifact in the OS file manager.
@@ -1036,14 +1152,49 @@ impl RecoveryService {
         file_id: &str,
     ) -> Result<String, LocardError> {
         let path = self.materialize_recovered_file(job_id, file_id, None)?;
+        let clean_path = strip_verbatim_prefix(&path);
 
-        opener::reveal(&path).map_err(|e| {
-            LocardError::Operation(format!(
-                "Operating system failed to reveal file in file manager: {}",
-                e
+        #[cfg(windows)]
+        {
+            // Primary attempt: opener::reveal with clean path (without \\?\ UNC verbatim prefix)
+            if opener::reveal(&clean_path).is_ok() {
+                return Ok(clean_path.to_string_lossy().to_string());
+            }
+
+            // Fallback 1: Windows Explorer command line with /select,"<clean_path>"
+            let status = std::process::Command::new("explorer")
+                .arg(format!("/select,{}", clean_path.display()))
+                .status();
+
+            if let Ok(st) = status {
+                // explorer.exe returns code 1 or None on success in modern Windows
+                if st.success() || st.code().is_none() || st.code() == Some(1) {
+                    return Ok(clean_path.to_string_lossy().to_string());
+                }
+            }
+
+            // Fallback 2: Open containing parent directory
+            if let Some(parent) = clean_path.parent() {
+                if opener::open(parent).is_ok() {
+                    return Ok(clean_path.to_string_lossy().to_string());
+                }
+            }
+
+            Err(LocardError::Operation(
+                "Operating system failed to reveal file in file manager".to_string(),
             ))
-        })?;
+        }
 
-        Ok(path.to_string_lossy().to_string())
+        #[cfg(not(windows))]
+        {
+            opener::reveal(&clean_path).map_err(|e| {
+                LocardError::Operation(format!(
+                    "Operating system failed to reveal file in file manager: {}",
+                    e
+                ))
+            })?;
+
+            Ok(clean_path.to_string_lossy().to_string())
+        }
     }
 }

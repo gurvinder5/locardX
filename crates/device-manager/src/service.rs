@@ -23,10 +23,16 @@ impl DeviceManagerService {
             info!("Initializing Windows platform device discovery provider");
             Self::new(Arc::new(WindowsDeviceProvider::new()))
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "linux")]
+        {
+            use crate::linux::LinuxDeviceProvider;
+            info!("Initializing Linux platform device discovery provider");
+            Self::new(Arc::new(LinuxDeviceProvider::new()))
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         {
             use crate::mock::MockDeviceProvider;
-            info!("Initializing mock device discovery provider on non-Windows platform");
+            info!("Initializing mock device discovery provider on unsupported platform");
             Self::new(Arc::new(MockDeviceProvider::new_default()))
         }
     }

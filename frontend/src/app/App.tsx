@@ -15,6 +15,9 @@ import {
   Cpu,
   Download,
   Briefcase,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
 } from 'lucide-react';
 import { getAppInfo, AppInfo } from '../services/tauri';
 import { useAuthStore } from '../stores/authStore';
@@ -53,6 +56,55 @@ type NavTab =
   | 'audit-logs'
   | 'user-management';
 
+interface NavItem {
+  id: NavTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  iconColor?: string;
+  adminOnly?: boolean;
+}
+
+interface NavGroup {
+  groupName: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    groupName: 'Workspace',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, iconColor: 'text-sky-600' },
+      { id: 'cases', label: 'Case Management', icon: Briefcase, iconColor: 'text-indigo-600' },
+    ],
+  },
+  {
+    groupName: 'Forensic Operations',
+    items: [
+      { id: 'acquisition', label: 'Forensic Acquisition', icon: Download, iconColor: 'text-blue-600' },
+      { id: 'recovery', label: 'Forensics & Recovery', icon: Search, iconColor: 'text-emerald-600' },
+      { id: 'device-explorer', label: 'Device Explorer', icon: HardDrive, iconColor: 'text-slate-600' },
+    ],
+  },
+  {
+    groupName: 'Data Sanitization',
+    items: [
+      { id: 'drive-eraser', label: 'Drive Eraser', icon: Cpu, iconColor: 'text-rose-600' },
+      { id: 'file-eraser', label: 'File Eraser', icon: FileText, iconColor: 'text-amber-600' },
+      { id: 'sanitization-planner', label: 'Sanitization Planner', icon: Cpu, iconColor: 'text-violet-600' },
+    ],
+  },
+  {
+    groupName: 'Governance & Security',
+    items: [
+      { id: 'operations', label: 'Operations Ledger', icon: Activity, iconColor: 'text-indigo-600' },
+      { id: 'integrity', label: 'Integrity Verification', icon: ShieldCheck, iconColor: 'text-teal-600' },
+      { id: 'safety-interlocks', label: 'Safety & Interlocks', icon: ShieldAlert, iconColor: 'text-amber-600' },
+      { id: 'audit-logs', label: 'Audit Trail', icon: ClipboardList, iconColor: 'text-slate-600' },
+      { id: 'user-management', label: 'User Management', icon: Users, iconColor: 'text-purple-600', adminOnly: true },
+    ],
+  },
+];
+
 export const App: React.FC = () => {
   const {
     currentUser,
@@ -69,6 +121,28 @@ export const App: React.FC = () => {
   const [showCaseSelectorModal, setShowCaseSelectorModal] = useState(false);
   const [blockedNavTarget, setBlockedNavTarget] = useState<NavTab | null>(null);
   const { isScanning: recoveryScanning } = useRecoveryStore();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('locardx_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('locardx_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     checkFirstRun();
@@ -134,10 +208,17 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased">
+    <div className="h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased overflow-hidden">
       {/* Workstation Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center justify-between sticky top-0 z-40 shadow-2xs">
-        <div className="flex items-center space-x-3">
+      <header className="bg-white border-b border-slate-200 px-5 py-2 flex items-center justify-between shrink-0 z-40 shadow-2xs">
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={toggleSidebar}
+            className="p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+            title={sidebarCollapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+          >
+            <Menu className="w-4 h-4" />
+          </button>
           <div className="w-2 h-2 rounded-full bg-emerald-500" />
           <h1 className="text-base font-bold tracking-tight text-slate-900">
             LOCARD<span className="text-sky-600">X</span>
@@ -163,7 +244,7 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wider">Active Case:</span>
                 <span className="font-mono font-bold text-sky-900">{activeCase.case_reference}</span>
-                <span className="text-slate-400">â€”</span>
+                <span className="text-slate-400">·</span>
                 <span className="max-w-[200px] truncate text-slate-700 font-medium">{activeCase.title}</span>
                 <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-bold border ${
                   activeCase.status === 'open' || activeCase.status === 'in_progress'
@@ -225,206 +306,121 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Navigation Subheader */}
-      <nav className="bg-white border-b border-slate-200 px-6">
-        <div className="flex space-x-1 overflow-x-auto py-1">
-          <button
-            onClick={() => handleTabClick('cases')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'cases'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Cases</span>
-          </button>
+      {/* Main Workspace: Left Sidebar + Central Viewport */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Vertical Sidebar */}
+        <aside
+          className={`bg-white border-r border-slate-200 flex flex-col shrink-0 transition-all duration-200 select-none ${
+            sidebarCollapsed ? 'w-14' : 'w-56'
+          }`}
+        >
+          <div className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+            {NAV_GROUPS.map((group) => {
+              const visibleItems = group.items.filter((item) => !item.adminOnly || isAdmin);
+              if (visibleItems.length === 0) return null;
 
-          <button
-            onClick={() => handleTabClick('device-explorer')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'device-explorer'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <HardDrive className="w-3.5 h-3.5 text-slate-700" />
-            <span>Device Explorer</span>
-          </button>
+              return (
+                <div key={group.groupName} className="space-y-0.5">
+                  {!sidebarCollapsed ? (
+                    <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {group.groupName}
+                    </div>
+                  ) : (
+                    <div className="h-px bg-slate-100 my-1.5 mx-1" />
+                  )}
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
 
-          <button
-            onClick={() => handleTabClick('operations')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'operations'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Operations</span>
-          </button>
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleTabClick(item.id)}
+                        className={`w-full text-left rounded-md flex items-center transition-all ${
+                          sidebarCollapsed
+                            ? 'justify-center p-2'
+                            : 'px-2.5 py-1.5 gap-2.5 text-xs'
+                        } ${
+                          isActive
+                            ? 'bg-slate-900 text-white font-semibold shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
+                        }`}
+                        title={sidebarCollapsed ? item.label : undefined}
+                      >
+                        <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : item.iconColor || 'text-slate-500'}`} />
+                        {!sidebarCollapsed && (
+                          <span className="truncate flex-1">{item.label}</span>
+                        )}
+                        {item.id === 'recovery' && recoveryScanning && (
+                          <span className="relative flex h-2 w-2 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
 
-          <button
-            onClick={() => handleTabClick('integrity')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'integrity'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Integrity Verification</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('safety-interlocks')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'safety-interlocks'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
-            <span>Safety & Interlocks</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('sanitization-planner')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'sanitization-planner'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5 text-indigo-700" />
-            <span>Sanitization Planner</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('dashboard')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'dashboard'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5 text-slate-600" />
-            <span>Dashboard</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('drive-eraser')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'drive-eraser'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5 text-slate-600" />
-            <span>Drive Eraser</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('file-eraser')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'file-eraser'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-600" />
-            <span>File Eraser</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('acquisition')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'acquisition'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Download className="w-3.5 h-3.5 text-blue-600" />
-            <span>Forensic Acquisition</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick('recovery')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'recovery'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Search className="w-3.5 h-3.5 text-slate-600" />
-            <span>Forensics & Recovery</span>
-            {recoveryScanning && (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => handleTabClick('audit-logs')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-              activeTab === 'audit-logs'
-                ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <ClipboardList className="w-3.5 h-3.5 text-slate-600" />
-            <span>Audit Trail</span>
-          </button>
-
-          {isAdmin && (
+          {/* Sidebar Bottom Collapse Control */}
+          <div className="p-2 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
             <button
-              onClick={() => handleTabClick('user-management')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-2 transition-colors ${
-                activeTab === 'user-management'
-                  ? 'bg-slate-100 text-slate-900 font-semibold shadow-2xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              onClick={toggleSidebar}
+              className={`flex items-center gap-2 p-1.5 rounded text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors w-full ${
+                sidebarCollapsed ? 'justify-center' : ''
               }`}
+              title={sidebarCollapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
             >
-              <Users className="w-3.5 h-3.5 text-purple-700" />
-              <span>User Management</span>
+              {sidebarCollapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <>
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="text-[11px] font-medium">Collapse</span>
+                  <span className="text-[10px] text-slate-400 ml-auto font-mono">Ctrl+B</span>
+                </>
+              )}
             </button>
-          )}
-        </div>
-      </nav>
+          </div>
+        </aside>
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-        {activeTab === 'cases' && <CaseManagementPage />}
-        {activeTab === 'device-explorer' && <DeviceExplorerPage />}
-        {activeTab === 'operations' && <OperationsPage />}
-        {activeTab === 'integrity' && <IntegrityVerificationPage />}
-        {activeTab === 'safety-interlocks' && <SafetyInterlocksPage />}
-        {activeTab === 'sanitization-planner' && <SanitizationPlannerPage />}
+        {/* Central Viewport */}
+        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+          <div className="max-w-7xl mx-auto w-full">
+            {activeTab === 'cases' && <CaseManagementPage />}
+            {activeTab === 'device-explorer' && <DeviceExplorerPage />}
+            {activeTab === 'operations' && <OperationsPage />}
+            {activeTab === 'integrity' && <IntegrityVerificationPage />}
+            {activeTab === 'safety-interlocks' && <SafetyInterlocksPage />}
+            {activeTab === 'sanitization-planner' && <SanitizationPlannerPage />}
 
-        {activeTab === 'dashboard' && (
-          <DashboardPage
-            appInfo={appInfo}
-            loading={infoLoading}
-            onNavigate={(tab) => handleTabClick(tab as NavTab)}
-          />
-        )}
+            {activeTab === 'dashboard' && (
+              <DashboardPage
+                appInfo={appInfo}
+                loading={infoLoading}
+                onNavigate={(tab) => handleTabClick(tab as NavTab)}
+              />
+            )}
 
-        {activeTab === 'user-management' && <UserManagementPage />}
+            {activeTab === 'user-management' && <UserManagementPage />}
 
-        {activeTab === 'drive-eraser' && <DriveEraserPage />}
+            {activeTab === 'drive-eraser' && <DriveEraserPage />}
 
-        {activeTab === 'file-eraser' && <FileEraserPage />}
+            {activeTab === 'file-eraser' && <FileEraserPage />}
 
-        {activeTab === 'acquisition' && <ForensicAcquisitionPage />}
+            {activeTab === 'acquisition' && <ForensicAcquisitionPage />}
 
-        <div className={activeTab === 'recovery' ? '' : 'hidden'}>
-          <ForensicRecoveryPage />
-        </div>
+            <div className={activeTab === 'recovery' ? '' : 'hidden'}>
+              <ForensicRecoveryPage />
+            </div>
 
-        {activeTab === 'audit-logs' && <AuditTrailPage />}
-      </main>
+            {activeTab === 'audit-logs' && <AuditTrailPage />}
+          </div>
+        </main>
+      </div>
 
       {/* Active Case Required Modal */}
       <ActiveCaseRequiredModal

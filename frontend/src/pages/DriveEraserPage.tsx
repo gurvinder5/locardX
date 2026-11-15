@@ -88,6 +88,7 @@ export const DriveEraserPage: React.FC = () => {
   const [showReportModal, setShowReportModal] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [copiedDigest, setCopiedDigest] = useState(false);
+  const [downloadedReport, setDownloadedReport] = useState(false);
 
   // Two-Stage Confirmation Modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -518,8 +519,12 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
     const a = document.createElement('a');
     a.href = url;
     a.download = `sanitization-certificate-${report.operation_id}.md`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setDownloadedReport(true);
+    setTimeout(() => setDownloadedReport(false), 3000);
   };
 
   return (
@@ -1562,10 +1567,12 @@ Audit Chain Reference: ${report.integrity.audit_chain_reference}
                     <button
                       type="button"
                       onClick={handleDownloadReport}
-                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-md flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      className={`px-3.5 py-1.5 text-white text-xs font-semibold rounded-md flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors ${
+                        downloadedReport ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      Download Certificate (.md)
+                      {downloadedReport ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                      {downloadedReport ? 'Downloaded to Downloads folder!' : 'Download Certificate (.md)'}
                     </button>
                   </div>
                 </div>

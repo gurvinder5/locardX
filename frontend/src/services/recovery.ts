@@ -399,3 +399,38 @@ export async function revealRecoveredFile(jobId: string, fileId: string): Promis
 
   return `workspace://${jobId}/${fileId}`;
 }
+
+export async function pickRawImageFile(): Promise<string | null> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string | null>('pick_raw_image_file');
+  }
+  return prompt('Enter full path to raw disk image (.raw, .dd, .img, .bin, .iso):');
+}
+
+export async function importLocalRecoverySource(
+  filePath: string,
+  sessionToken?: string
+): Promise<RecoverySourceSnapshot> {
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<RecoverySourceSnapshot>('import_local_recovery_source', {
+      request: {
+        file_path: filePath,
+        session_token: sessionToken || null,
+      },
+    });
+  }
+
+  return {
+    source_id: `src-local-${Date.now()}`,
+    acquisition_id: `acq-local-${Date.now()}`,
+    image_path: filePath,
+    image_size_bytes: 104857600,
+    image_sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    original_device_id: `Local File (${filePath.split(/[/\\]/).pop() || 'disk.raw'})`,
+    original_serial: null,
+    verified_at: new Date().toISOString(),
+    is_trusted: true,
+  };
+}

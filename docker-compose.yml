@@ -22,7 +22,7 @@ services:
     ports:
       - "8085:8080"
     volumes:
-      - ./data:/data
+      - ./src-tauri:/data
     environment:
       - SQLITE_DATABASE=locardx.db
     restart: unless-stopped
@@ -35,6 +35,12 @@ services:
       - .:/workspace
       - cargo-cache:/usr/local/cargo/registry
       - target-cache:/workspace/target
+      # Host device access for real storage device discovery
+      - /sys:/sys:ro
+      - /dev:/dev:ro
+      - /proc:/host-proc:ro
+    environment:
+      - LOCARDX_PROC_PATH=/host-proc
     command: cargo test --workspace --no-run
     profiles:
       - rust

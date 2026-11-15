@@ -24,7 +24,7 @@ interface RecoveryWizardProps {
   sessionToken?: string | null;
 }
 
-export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken: _sessionToken }) => {
+export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) => {
   const { activeCase } = useCaseStore();
   const [showCaseModal, setShowCaseModal] = useState(false);
   const isCaseActive = activeCase && (activeCase.status === 'open' || activeCase.status === 'in_progress');
@@ -32,6 +32,7 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken: _s
   const {
     sources,
     loadingSources,
+    fetchSources,
     selectedArtifact,
     selectedSourceSnapshot,
     setSelectedSourceSnapshot,
@@ -281,6 +282,8 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken: _s
             loading={loadingSources}
             selectedSourceId={selectedSourceSnapshot?.source_id ?? null}
             onSelectSource={handleSelectSource}
+            onRefreshSources={fetchSources}
+            sessionToken={sessionToken}
           />
 
           <div className="flex justify-end pt-2">

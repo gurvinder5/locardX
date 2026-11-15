@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   Layers,
+  CheckCircle2,
 } from 'lucide-react';
 import { useCases } from '../hooks/useCases';
 import { useCaseStore } from '../stores/caseStore';
@@ -56,13 +57,19 @@ export const CaseManagementPage: React.FC = () => {
   >('operations');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
 
   const handleGenerateReport = async () => {
     if (!activeCase) return;
     try {
       setReportLoading(true);
+      setReportSuccess(false);
       await produceCaseReport(activeCase.case_id);
+      setReportSuccess(true);
       setActiveSubTab('reports');
+      setTimeout(() => {
+        setReportSuccess(false);
+      }, 4000);
     } catch (err) {
       console.error('Failed to generate report:', err);
     } finally {
@@ -106,13 +113,32 @@ export const CaseManagementPage: React.FC = () => {
                 }}
                 onGenerateReport={handleGenerateReport}
                 reportLoading={reportLoading}
+                reportSuccess={reportSuccess}
               />
 
+              {/* Report Generation Success Confirmation Alert */}
+              {reportSuccess && (
+                <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs px-4 py-3 rounded-md flex items-center justify-between shadow-2xs transition-all">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <span className="font-bold text-emerald-950">Case Report Generated Successfully!</span>
+                      <p className="text-[11px] text-emerald-800 mt-0.5">
+                        A tamper-evident, cryptographically signed investigation report has been compiled and saved to the case archive below.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                    Signed & Verified
+                  </span>
+                </div>
+              )}
+
               {/* Sub-tab Navigation */}
-              <div className="bg-white border border-slate-200 rounded-md p-1 flex space-x-1 shadow-2xs overflow-x-auto">
+              <div className="bg-white border border-slate-200 rounded-md p-1 flex flex-wrap gap-1 shadow-2xs">
                 <button
                   onClick={() => setActiveSubTab('operations')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'operations'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -124,7 +150,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('evidence')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'evidence'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -136,7 +162,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('acquisitions')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'acquisitions'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -148,7 +174,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('recoveries')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'recoveries'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -160,7 +186,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('erasures')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'erasures'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -172,7 +198,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('custody')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'custody'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -184,7 +210,7 @@ export const CaseManagementPage: React.FC = () => {
 
                 <button
                   onClick={() => setActiveSubTab('reports')}
-                  className={`flex-1 py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-[110px] py-1.5 px-2.5 rounded text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors ${
                     activeSubTab === 'reports'
                       ? 'bg-slate-900 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'

@@ -215,7 +215,7 @@ impl DriveEraserService {
             }
 
             // 1. Inspect physical device (strictly rejecting logical volume paths like C:\)
-            let (device, snapshot) =
+            let (device, mut snapshot) =
                 inspect_physical_device(&request.target_device_id, &self.device_provider, 512)
                     .map_err(|e| match e {
                         DriveEraseFailureReason::LogicalVolumeTargetRejected(msg) => {
@@ -234,6 +234,13 @@ impl DriveEraserService {
                     "Device capability assessment state '{:?}' fails closed; planning rejected.",
                     assessment.overall_state
                 )));
+            }
+
+            // Synchronize snapshot with real hardware observations (bus_type, sector_size, etc.)
+            if let Ok(Some(hw_snap)) = self.hardware_provider.probe_device_snapshot(&request.target_device_id) {
+                snapshot = hw_snap;
+            } else if snapshot.bus_type.is_none() && !assessment.capabilities.interface_bus.is_empty() && assessment.capabilities.interface_bus != "Unknown" {
+                snapshot.bus_type = Some(assessment.capabilities.interface_bus.clone());
             }
 
             // 3. Generate media-aware plan authorized for RealHardware
@@ -265,7 +272,7 @@ impl DriveEraserService {
         }
 
         // 1. Inspect physical device (strictly rejecting logical volume paths like C:\)
-        let (device, snapshot) =
+        let (device, mut snapshot) =
             inspect_physical_device(&request.target_device_id, &self.device_provider, 512)
                 .map_err(|e| match e {
                     DriveEraseFailureReason::LogicalVolumeTargetRejected(msg) => {
@@ -279,6 +286,13 @@ impl DriveEraserService {
 
         // 2. Detect hardware capabilities
         let capabilities = detect_device_capabilities(&device);
+
+        // Synchronize snapshot with hardware provider observations if available
+        if let Ok(Some(hw_snap)) = self.hardware_provider.probe_device_snapshot(&request.target_device_id) {
+            snapshot = hw_snap;
+        } else if snapshot.bus_type.is_none() && !capabilities.interface_bus.is_empty() && capabilities.interface_bus != "Unknown" {
+            snapshot.bus_type = Some(capabilities.interface_bus.clone());
+        }
 
         // 3. Generate media-aware plan
         let plan = generate_drive_erase_plan(
