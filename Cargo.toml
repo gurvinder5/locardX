@@ -56,3 +56,17 @@ locardx-file-eraser = { path = "crates/file-eraser" }
 locardx-acquisition = { path = "crates/acquisition" }
 locardx-recovery-engine = { path = "crates/recovery-engine" }
 
+# Compile cryptographic dependencies with maximum optimization even in debug development builds
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.locardx-acquisition]
+opt-level = 3
+
+[profile.dev.package.locardx-recovery-engine]
+opt-level = 3
+
+

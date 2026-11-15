@@ -22,10 +22,13 @@ pub fn parse_riff_stream(data: &[u8]) -> Option<(u64, bool, FileType)> {
         return None;
     }
 
-    let is_valid = total_size >= 12;
-    let final_len = total_size.min(data.len() as u64);
+    // Sanity check: must be at least 12 bytes and at most 2 GB
+    if total_size < 12 || total_size > 2 * 1024 * 1024 * 1024 {
+        return None;
+    }
 
-    Some((final_len, is_valid, file_type))
+    // Return the true container size indicated by the RIFF header
+    Some((total_size, true, file_type))
 }
 
 /// Parses MP4 / ISO Base Media File Format (ftyp box).
@@ -40,14 +43,14 @@ pub fn parse_mp4_stream(data: &[u8]) -> Option<(u64, bool)> {
         return None;
     }
 
-    let mut offset = 0;
+    let mut offset = 0usize;
     let mut total_size = 0u64;
     let mut box_count = 0;
     let mut has_moov = false;
     let mut has_mdat = false;
 
     while offset + 8 <= data.len() {
-        let box_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        let box_len = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as u64;
         let box_type = &data[offset + 4..offset + 8];
 
         if box_type == b"moov" {
@@ -56,38 +59,39 @@ pub fn parse_mp4_stream(data: &[u8]) -> Option<(u64, bool)> {
             has_mdat = true;
         }
 
-        if box_len == 0 {
-            // Extends to EOF
-            total_size = data.len() as u64;
-            break;
-        } else if box_len == 1 {
+        let actual_box_len = if box_len == 1 {
             // Extended 64-bit size
             if offset + 16 > data.len() {
                 break;
             }
-            let ext_len =
-                u64::from_be_bytes(data[offset + 8..offset + 16].try_into().unwrap()) as usize;
-            if ext_len < 16 || offset + ext_len > data.len() {
-                break;
-            }
-            offset += ext_len;
-            total_size = offset as u64;
+            u64::from_be_bytes(data[offset + 8..offset + 16].try_into().unwrap())
+        } else if box_len == 0 {
+            // Box extends to end of container
+            break;
         } else {
-            if box_len < 8 || offset + box_len > data.len() {
-                break;
-            }
-            offset += box_len;
-            total_size = offset as u64;
-        }
+            box_len
+        };
 
-        box_count += 1;
-        if has_moov && has_mdat {
+        if actual_box_len < 8 {
             break;
         }
+
+        let next_offset = offset as u64 + actual_box_len;
+        total_size = next_offset;
+        box_count += 1;
+
+        // If this box (e.g. mdat video data) extends beyond the current buffer chunk,
+        // we keep its true size! The caller will read the full video from disk.
+        if next_offset as usize > data.len() {
+            break;
+        }
+
+        offset = next_offset as usize;
     }
 
     if box_count > 0 && total_size >= 16 {
-        Some((total_size.min(data.len() as u64), true))
+        let is_valid = has_moov || has_mdat || box_count >= 1;
+        Some((total_size, is_valid))
     } else {
         None
     }
@@ -138,8 +142,33 @@ pub fn parse_mkv_stream(data: &[u8]) -> Option<(u64, bool)> {
     let has_doctype = data[..check_window].windows(8).any(|w| w == b"matroska")
         || data[..check_window].windows(4).any(|w| w == b"webm");
 
-    let is_valid = has_doctype;
-    let final_len = (data.len() as u64).min(500 * 1024 * 1024);
+    if !has_doctype {
+        return None;
+    }
 
-    Some((final_len, is_valid))
+    // Search for Segment element: [0x18, 0x53, 0x80, 0x67]
+    let mut segment_size = None;
+    if let Some(pos) = data[..check_window.min(data.len())]
+        .windows(4)
+        .position(|w| w == [0x18, 0x53, 0x80, 0x67])
+    {
+        let vint_start = pos + 4;
+        if vint_start < data.len() {
+            let first_byte = data[vint_start];
+            let num_bytes = first_byte.leading_zeros() as usize + 1;
+            if num_bytes <= 8 && vint_start + num_bytes <= data.len() {
+                let mut val = (first_byte & ((1 << (8 - num_bytes)) - 1)) as u64;
+                for i in 1..num_bytes {
+                    val = (val << 8) | (data[vint_start + i] as u64);
+                }
+                let unknown_mask = (1u64 << (7 * num_bytes)) - 1;
+                if val != unknown_mask && val > 0 && val < 50 * 1024 * 1024 * 1024 {
+                    segment_size = Some((vint_start + num_bytes) as u64 + val);
+                }
+            }
+        }
+    }
+
+    let detected_len = segment_size.unwrap_or_else(|| (data.len() as u64).min(500 * 1024 * 1024));
+    Some((detected_len, true))
 }

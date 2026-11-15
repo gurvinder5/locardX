@@ -98,6 +98,8 @@ fn main() {
             locardx_desktop::commands::get_recovery_report,
             locardx_desktop::commands::open_recovered_file,
             locardx_desktop::commands::reveal_recovered_file,
+            locardx_desktop::commands::pick_raw_image_file,
+            locardx_desktop::commands::import_local_recovery_source,
             locardx_desktop::commands::create_case,
             locardx_desktop::commands::get_case,
             locardx_desktop::commands::list_cases,

@@ -53,6 +53,12 @@ pub fn parse_jpeg_stream(data: &[u8]) -> Option<(u64, bool)> {
 
         let payload_len = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
         if payload_len < 2 || offset + payload_len > data.len() {
+            // Check if misaligned marker exists within forward search
+            let search_end = (offset + payload_len).min(data.len());
+            if let Some(pos) = data[offset..search_end].iter().position(|&b| b == 0xFF) {
+                offset += pos;
+                continue;
+            }
             break;
         }
 
@@ -63,7 +69,7 @@ pub fn parse_jpeg_stream(data: &[u8]) -> Option<(u64, bool)> {
         } else if marker == 0xC4 {
             has_dht = true;
         } else if marker == 0xDA {
-            // SOS (Start of Scan) reached - advance past SOS header and enter Phase 2
+            // SOS (Start of Scan) reached: advance past SOS header and enter Phase 2
             offset += payload_len;
             break;
         }
@@ -113,12 +119,7 @@ pub fn parse_jpeg_stream(data: &[u8]) -> Option<(u64, bool)> {
         let marker = data[marker_pos];
         let next_pos = marker_pos + 1;
 
-        if marker == 0x00 {
-            scan_offset = next_pos;
-            continue;
-        }
-
-        if (0xD0..=0xD7).contains(&marker) {
+        if marker == 0x00 || (0xD0..=0xD7).contains(&marker) {
             scan_offset = next_pos;
             continue;
         }

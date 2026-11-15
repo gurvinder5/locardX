@@ -11,6 +11,9 @@ pub mod traits;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+#[cfg(target_os = "linux")]
+pub mod linux;
+
 pub use mock::MockDeviceProvider;
 pub use models::*;
 pub use service::DeviceManagerService;
@@ -18,3 +21,6 @@ pub use traits::DeviceDiscoveryProvider;
 
 #[cfg(target_os = "windows")]
 pub use windows::WindowsDeviceProvider;
+
+#[cfg(target_os = "linux")]
+pub use linux::LinuxDeviceProvider;

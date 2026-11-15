@@ -12,6 +12,8 @@ import {
   FileText,
   RotateCcw,
   Lock,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { Case, CaseSummary, CaseStatus } from '../../types/case';
 
@@ -24,6 +26,7 @@ interface CaseOverviewProps {
   onReopenCase?: () => void;
   onGenerateReport: () => void;
   reportLoading: boolean;
+  reportSuccess?: boolean;
 }
 
 export const CaseOverview: React.FC<CaseOverviewProps> = ({
@@ -35,6 +38,7 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
   onReopenCase,
   onGenerateReport,
   reportLoading,
+  reportSuccess = false,
 }) => {
   const isClosed = currentCase.status === 'completed' || currentCase.status === 'archived';
 
@@ -109,11 +113,32 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
 
             <button
               onClick={onGenerateReport}
-              disabled={reportLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-2xs"
+              disabled={reportLoading || reportSuccess}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all shadow-2xs ${
+                reportSuccess
+                  ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
+                  : reportLoading
+                  ? 'bg-emerald-600 text-white opacity-85 cursor-wait'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
+              }`}
+              title={reportLoading ? 'Generating forensic report...' : 'Compile and cryptographically sign case report'}
             >
-              <FileCheck className="w-3.5 h-3.5" />
-              <span>{reportLoading ? 'Generating...' : 'Generate Case Report'}</span>
+              {reportLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Generating Report...</span>
+                </>
+              ) : reportSuccess ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
+                  <span>Report Generated!</span>
+                </>
+              ) : (
+                <>
+                  <FileCheck className="w-3.5 h-3.5" />
+                  <span>Generate Case Report</span>
+                </>
+              )}
             </button>
           </div>
         </div>

@@ -34,9 +34,9 @@ pub fn validate_acquisition_artifact(
     }
 
     let fmt = artifact.image_format.to_lowercase();
-    if fmt != "raw" && fmt != "dd" {
+    if fmt != "raw" && fmt != "dd" && fmt != "img" && fmt != "bin" && fmt != "iso" && fmt != "image" {
         return Err(RecoveryFailureReason::InvalidFormat(format!(
-            "Unsupported image format '{}'; only 'raw' or 'dd' are accepted",
+            "Unsupported image format '{}'; raw, dd, img, bin, or iso are accepted",
             artifact.image_format
         )));
     }
@@ -94,7 +94,7 @@ pub fn compute_streaming_sha256(path: &Path) -> Result<String, RecoveryFailureRe
 
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = vec![0u8; 1024 * 1024];
 
     loop {
         match reader.read(&mut buffer) {

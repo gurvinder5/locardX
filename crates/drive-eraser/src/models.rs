@@ -523,6 +523,12 @@ impl PhysicalDeviceSnapshot {
             .filter_map(|v| v.label.clone())
             .collect();
 
+        let bus_type = match device.device_type {
+            DeviceType::Usb => Some("USB".to_string()),
+            DeviceType::MemoryCard => Some("SD/MMC".to_string()),
+            _ => None,
+        };
+
         Self {
             device_id: device.device_id.clone(),
             display_name: device.display_name.clone(),
@@ -533,7 +539,7 @@ impl PhysicalDeviceSnapshot {
             capacity_bytes: device.capacity_bytes,
             sector_size,
             physical_sector_size: None,
-            bus_type: None,
+            bus_type,
             is_system: is_sys,
             is_boot,
             is_removable: device.removable,
@@ -681,7 +687,26 @@ impl PhysicalDeviceSnapshot {
         }
 
         // Strong Identifier: Bus Type
-        if self.bus_type != live.bus_type && (self.bus_type.is_some() || live.bus_type.is_some()) {
+        let bus_matches = match (&self.bus_type, &live.bus_type) {
+            (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+            (None, None) => true,
+            (None, Some(live_bus)) if self.is_external_or_removable() && live.is_external_or_removable() => {
+                let matches_media = (self.media_type == DeviceType::Usb && live_bus.eq_ignore_ascii_case("USB"))
+                    || (self.media_type == DeviceType::MemoryCard && (live_bus.contains("SD") || live_bus.contains("MMC")));
+                if matches_media {
+                    discrepancies.push(format!(
+                        "Bus type identified on live re-probe: planned None, live Some('{}')",
+                        live_bus
+                    ));
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+
+        if !bus_matches {
             return IdentityRevalidationOutcome::Failed(format!(
                 "Bus type mutated: planned {:?}, live {:?}",
                 self.bus_type, live.bus_type
@@ -696,9 +721,20 @@ impl PhysicalDeviceSnapshot {
             ));
         }
 
-        if self.physical_sector_size != live.physical_sector_size
-            && (self.physical_sector_size.is_some() || live.physical_sector_size.is_some())
-        {
+        let pss_matches = match (self.physical_sector_size, live.physical_sector_size) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => true,
+            (None, Some(live_pss)) if self.is_external_or_removable() && live.is_external_or_removable() => {
+                discrepancies.push(format!(
+                    "Physical sector size observed on live re-probe: planned None, live Some({})",
+                    live_pss
+                ));
+                true
+            }
+            _ => false,
+        };
+
+        if !pss_matches {
             return IdentityRevalidationOutcome::Failed(format!(
                 "Physical sector size mutated: planned {:?}, live {:?}",
                 self.physical_sector_size, live.physical_sector_size

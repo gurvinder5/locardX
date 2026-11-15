@@ -5,23 +5,47 @@ pub fn parse_bmp_stream(data: &[u8]) -> Option<(u64, bool)> {
         return None;
     }
 
+    // Reserved bytes (offsets 6..10) MUST be zero in all standard BMPs
+    if data[6] != 0 || data[7] != 0 || data[8] != 0 || data[9] != 0 {
+        return None;
+    }
+
     let file_size = u32::from_le_bytes(data[2..6].try_into().unwrap()) as u64;
     let pixel_offset = u32::from_le_bytes(data[10..14].try_into().unwrap()) as u64;
     let dib_header_size = u32::from_le_bytes(data[14..18].try_into().unwrap()) as u64;
 
-    // Minimum valid BMP is 26 bytes (14 header + 12 OS/2 DIB)
-    if file_size < 26 || pixel_offset < 14 + dib_header_size {
+    // DIB header size must match one of the standard specifications:
+    // 12 (BITMAPCOREHEADER / OS/2 1.x)
+    // 40 (BITMAPINFOHEADER - 99% of all BMPs)
+    // 52 (BITMAPV2HEADER)
+    // 56 (BITMAPV3HEADER)
+    // 64 (OS/2 2.x BITMAPCOREHEADER2)
+    // 108 (BITMAPV4HEADER)
+    // 124 (BITMAPV5HEADER)
+    let valid_dib = matches!(dib_header_size, 12 | 40 | 52 | 56 | 64 | 108 | 124);
+    if !valid_dib {
         return None;
     }
 
-    let is_valid = pixel_offset <= file_size
-        && (dib_header_size == 40
-            || dib_header_size == 12
-            || dib_header_size == 108
-            || dib_header_size == 124);
-    let final_len = file_size.min(data.len() as u64);
+    // Pixel offset must be at least header (14) + DIB size
+    if pixel_offset < 14 + dib_header_size || (file_size > 0 && pixel_offset > file_size) {
+        return None;
+    }
 
-    Some((final_len, is_valid))
+    // If planes field is present (offset 26..28), must be <= 1
+    if data.len() >= 28 {
+        let planes = u16::from_le_bytes([data[26], data[27]]);
+        if planes > 1 {
+            return None;
+        }
+    }
+
+    // File size must be reasonable (at least 26 bytes and at most 100 MB)
+    if file_size < 26 || file_size > 100 * 1024 * 1024 {
+        return None;
+    }
+
+    Some((file_size, true))
 }
 
 /// Parses GIF structure (GIF87a / GIF89a).
@@ -98,41 +122,41 @@ pub fn parse_gif_stream(data: &[u8]) -> Option<(u64, bool)> {
     }
 
     // Fallback: if trailer was found within slice
-    for i in (13..data.len()).rev() {
-        if data[i] == 0x3B {
-            return Some(((i + 1) as u64, true));
+    if let Some(pos) = data.iter().rposition(|&b| b == 0x3B) {
+        if pos >= 13 {
+            return Some(((pos + 1) as u64, true));
         }
     }
 
     None
 }
 
-/// Parses TIFF structure (II*\0 or MM\0*).
+/// Parses TIFF structure (Little Endian: II*\0 or Big Endian: MM\0*).
 /// Returns (file_length, is_valid)
 pub fn parse_tiff_stream(data: &[u8]) -> Option<(u64, bool)> {
     if data.len() < 8 {
         return None;
     }
 
-    let is_le = data[0..4] == [0x49, 0x49, 0x2A, 0x00];
-    let is_be = data[0..4] == [0x4D, 0x4D, 0x00, 0x2A];
+    let is_le = &data[0..4] == [0x49, 0x49, 0x2A, 0x00];
+    let is_be = &data[0..4] == [0x4D, 0x4D, 0x00, 0x2A];
     if !is_le && !is_be {
         return None;
     }
 
-    let first_ifd_offset = if is_le {
-        u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize
+    let ifd_offset = if is_le {
+        u32::from_le_bytes(data[4..8].try_into().unwrap()) as u64
     } else {
-        u32::from_be_bytes(data[4..8].try_into().unwrap()) as usize
+        u32::from_be_bytes(data[4..8].try_into().unwrap()) as u64
     };
 
-    if first_ifd_offset < 8 || first_ifd_offset >= data.len() {
+    if ifd_offset < 8 {
         return None;
     }
 
-    // Estimate length from IFD and strip/tile offsets if possible, or bounded size
-    let is_valid = first_ifd_offset >= 8;
-    let detected_size = (data.len() as u64).min(50 * 1024 * 1024);
+    // Bound TIFF size reasonably
+    let final_len = (ifd_offset + 1024 * 1024).min(data.len() as u64).max(ifd_offset + 128);
+    let is_valid = ifd_offset + 2 <= data.len() as u64;
 
-    Some((detected_size, is_valid))
+    Some((final_len, is_valid))
 }

@@ -26,13 +26,18 @@ impl fmt::Display for RecoveryMode {
 
 /// Lifecycle status of a recovery job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum RecoveryStatus {
+    #[serde(alias = "pending")]
     Pending,
+    #[serde(alias = "validating")]
     Validating,
+    #[serde(alias = "scanning")]
     Scanning,
+    #[serde(alias = "completed")]
     Completed,
+    #[serde(alias = "failed")]
     Failed,
+    #[serde(alias = "cancelled")]
     Cancelled,
 }
 

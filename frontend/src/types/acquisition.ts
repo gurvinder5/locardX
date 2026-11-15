@@ -182,7 +182,8 @@ export interface AcquisitionRecord {
   image_size_bytes: number;
   image_sha256: string;
   status: string;
-  created_at: string;
+  started_at?: string;
+  created_at?: string;
   completed_at?: string | null;
 }
 

@@ -120,9 +120,9 @@ export const ForensicRecoveryPage: React.FC = () => {
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          job.status === 'Completed'
+                          job.status?.toLowerCase() === 'completed'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : job.status === 'Cancelled'
+                            : job.status?.toLowerCase() === 'cancelled'
                             ? 'bg-amber-50 text-amber-700 border border-amber-200'
                             : 'bg-rose-50 text-rose-700 border border-rose-200'
                         }`}

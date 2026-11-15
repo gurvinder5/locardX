@@ -277,3 +277,50 @@ pub async fn reveal_recovered_file(
         message: format!("Worker thread failure during file reveal: {}", e),
     })?
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImportLocalSourceRequest {
+    pub file_path: String,
+    pub session_token: Option<String>,
+}
+
+#[tauri::command]
+pub async fn pick_raw_image_file() -> Result<Option<String>, SafeErrorResponse> {
+    let file = rfd::AsyncFileDialog::new()
+        .set_title("Select Raw Forensic Disk Image")
+        .add_filter(
+            "Forensic Disk Images (*.raw, *.dd, *.img, *.bin, *.iso, *.001)",
+            &["raw", "dd", "img", "bin", "iso", "001"],
+        )
+        .add_filter("All Files (*.*)", &["*"])
+        .pick_file()
+        .await;
+
+    Ok(file.map(|f| f.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn import_local_recovery_source(
+    state: State<'_, AppState>,
+    request: ImportLocalSourceRequest,
+) -> Result<RecoverySourceSnapshot, SafeErrorResponse> {
+    let actor_id = request
+        .session_token
+        .as_deref()
+        .and_then(|t| state.auth.get_current_user(t).ok())
+        .map(|u| u.username);
+
+    let recovery_svc = state.recovery.clone();
+    let file_path = request.file_path;
+
+    tokio::task::spawn_blocking(move || {
+        recovery_svc
+            .import_local_image(&file_path, actor_id.as_deref())
+            .map_err(|e| SafeErrorResponse::from(&e))
+    })
+    .await
+    .map_err(|e| SafeErrorResponse {
+        code: "THREAD_JOIN_ERROR".to_string(),
+        message: format!("Worker thread failure during source import: {}", e),
+    })?
+}
