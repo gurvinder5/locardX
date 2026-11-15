@@ -1,0 +1,44 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: locardx-app
+    ports:
+      - "1420:1420"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./data:/data
+    environment:
+      - NODE_ENV=development
+      - LOCARDX_DB_PATH=/data/locardx.db
+    restart: unless-stopped
+
+  db-admin:
+    image: coleifer/sqlite-web:latest
+    container_name: locardx-db-admin
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - SQLITE_DATABASE=locardx.db
+    restart: unless-stopped
+
+  rust-env:
+    image: rust:1.80-slim
+    container_name: locardx-rust
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/workspace/target
+    command: cargo test --workspace --no-run
+    profiles:
+      - rust
+
+volumes:
+  cargo-cache:
+  target-cache:
