@@ -16,6 +16,23 @@ import {
   AlertOctagon,
 } from 'lucide-react';
 import {
+  Button,
+  Input,
+  Chip,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Checkbox,
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from '@heroui/react';
+import {
   ConfirmationChallenge,
   RiskLevel,
   SafetyDecision,
@@ -75,7 +92,7 @@ export const SafetyInterlocksPage: React.FC = () => {
         setSelectedTargetId(list[0].device_id);
         setSelectedTargetType('PhysicalDevice');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load storage devices:', err);
     } finally {
       setDevicesLoading(false);
@@ -130,8 +147,9 @@ export const SafetyInterlocksPage: React.FC = () => {
       });
       setCurrentDecision(decision);
       await loadHistory();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to evaluate target safety.');
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Failed to evaluate target safety.';
+      setErrorMsg(msg);
     } finally {
       setEvaluating(false);
     }
@@ -157,8 +175,9 @@ export const SafetyInterlocksPage: React.FC = () => {
       setTypedTargetInput('');
       setIsConfirmModalOpen(true);
       await loadHistory();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Failed to request destructive confirmation.');
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Failed to request destructive confirmation.';
+      setErrorMsg(msg);
     } finally {
       setEvaluating(false);
     }
@@ -181,8 +200,9 @@ export const SafetyInterlocksPage: React.FC = () => {
       setCurrentDecision(result);
       setIsConfirmModalOpen(false);
       await loadHistory();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Confirmation failed.');
+    } catch (err: unknown) {
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Confirmation failed.';
+      setErrorMsg(msg);
     } finally {
       setSubmittingConfirm(false);
     }
@@ -192,31 +212,47 @@ export const SafetyInterlocksPage: React.FC = () => {
     switch (decision) {
       case 'Allowed':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <Chip
+            size="sm"
+            variant="flat"
+            startContent={<CheckCircle2 className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />}
+            className="text-xs font-semibold bg-slate-100 dark:bg-workstation-surface text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
+          >
             ALLOWED
-          </span>
+          </Chip>
         );
       case 'RequiresConfirmation':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+          <Chip
+            size="sm"
+            variant="flat"
+            startContent={<AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
+            className="text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40"
+          >
             REQUIRES CONFIRMATION
-          </span>
+          </Chip>
         );
       case 'Denied':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+          <Chip
+            size="sm"
+            variant="flat"
+            startContent={<XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />}
+            className="text-xs font-semibold bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40"
+          >
             DENIED
-          </span>
+          </Chip>
         );
       case 'Blocked':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300">
-            <Lock className="w-3.5 h-3.5 text-red-600" />
+          <Chip
+            size="sm"
+            variant="flat"
+            startContent={<Lock className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />}
+            className="text-xs font-semibold bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
+          >
             HARD BLOCKED
-          </span>
+          </Chip>
         );
     }
   };
@@ -224,103 +260,121 @@ export const SafetyInterlocksPage: React.FC = () => {
   const getRiskBadge = (risk: RiskLevel) => {
     switch (risk) {
       case 'Low':
-        return <span className="px-2 py-0.5 text-[11px] font-medium rounded bg-slate-100 text-slate-700 border border-slate-200">Low Risk</span>;
+        return (
+          <Chip size="sm" variant="flat" className="text-[11px] font-medium bg-slate-100 dark:bg-workstation-surface text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-workstation-border">
+            Low Risk
+          </Chip>
+        );
       case 'Medium':
-        return <span className="px-2 py-0.5 text-[11px] font-medium rounded bg-amber-50 text-amber-800 border border-amber-200">Medium Risk</span>;
+        return (
+          <Chip size="sm" variant="flat" className="text-[11px] font-medium bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
+            Medium Risk
+          </Chip>
+        );
       case 'High':
-        return <span className="px-2 py-0.5 text-[11px] font-medium rounded bg-orange-50 text-orange-800 border border-orange-200">High Risk</span>;
+        return (
+          <Chip size="sm" variant="flat" className="text-[11px] font-medium bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+            High Risk
+          </Chip>
+        );
       case 'Critical':
-        return <span className="px-2 py-0.5 text-[11px] font-medium rounded bg-red-50 text-red-800 border border-red-200 font-bold">Critical Risk</span>;
+        return (
+          <Chip size="sm" variant="flat" className="text-[11px] font-bold bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
+            Critical Risk
+          </Chip>
+        );
     }
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 w-full min-w-0">
       {/* Header Banner with Safety Invariant */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs">
+      <div className="border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-panel p-4 space-y-3">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-md bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
-              <ShieldAlert className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-xs bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center text-amber-700 dark:text-amber-400">
+              <ShieldAlert className="w-4 h-4" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-slate-900 tracking-tight">
+              <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
                 Safety & Authorization Interlocks
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Pre-execution validation, device classification verification, and fail-closed gates.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={() => {
                 loadDevices();
                 loadHistory();
               }}
-              disabled={devicesLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors"
+              isDisabled={devicesLoading}
+              startContent={<RefreshCw className={`w-3.5 h-3.5 ${devicesLoading ? 'animate-spin' : ''}`} />}
+              className="text-xs font-medium bg-slate-50 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border text-slate-700 dark:text-slate-300"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${devicesLoading ? 'animate-spin' : ''}`} />
               Refresh
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Global Safety Notice */}
-        <div className="mt-4 p-3 bg-amber-50/60 border border-amber-200 rounded text-xs text-amber-900 flex items-start gap-2.5">
-          <AlertOctagon className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+        <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xs text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+          <AlertOctagon className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-amber-950">
+            <p className="font-semibold text-amber-950 dark:text-amber-100">
               CRITICAL INVARIANT: DEVICE CLASSIFICATION IS NOT AUTHORIZATION
             </p>
-            <p className="text-[11px] text-amber-800">
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
               Identifying a storage device as external or removable does not grant permission. Hard blocks on system/boot devices can never be overridden. Destructive executors are permanently disabled at this foundation stage.
             </p>
           </div>
         </div>
       </div>
 
-      {/* KPI Stats Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-2xs">
+      {/* KPI Stats Ribbon (Information-First Inline Metric Group, No Cards) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-workstation-border border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-panel">
+        <div className="p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Active Operator</span>
-            <Lock className="w-4 h-4 text-slate-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">Active Operator</span>
+            <Lock className="w-3.5 h-3.5 text-slate-400" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-bold text-slate-900">{currentUser?.username || 'Unauthenticated'}</span>
-            <span className="text-[11px] font-semibold text-purple-700">({currentUser?.role || 'None'})</span>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-base font-bold text-slate-900 dark:text-slate-100">{currentUser?.username || 'Unauthenticated'}</span>
+            <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400">({currentUser?.role || 'None'})</span>
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">Server-side RBAC enforced</p>
+          <p className="mt-0.5 text-[10px] text-slate-400">Server-side RBAC enforced</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-2xs">
+        <div className="p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">System Protection</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">System Protection</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="mt-2 text-xl font-bold text-emerald-700">HARD BLOCKED</div>
-          <p className="mt-1 text-[11px] text-slate-400">OS root & boot volumes protected</p>
+          <div className="mt-1 text-base font-bold text-slate-900 dark:text-slate-100">HARD BLOCKED</div>
+          <p className="mt-0.5 text-[10px] text-slate-400">OS root & boot volumes protected</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-2xs">
+        <div className="p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">TOCTOU Defense</span>
-            <Layers className="w-4 h-4 text-indigo-600" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">TOCTOU Defense</span>
+            <Layers className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="mt-2 text-xl font-bold text-indigo-700">ACTIVE</div>
-          <p className="mt-1 text-[11px] text-slate-400">Live snapshot revalidation</p>
+          <div className="mt-1 text-base font-bold text-slate-900 dark:text-slate-100">ACTIVE</div>
+          <p className="mt-0.5 text-[10px] text-slate-400">Live snapshot revalidation</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-2xs">
+        <div className="p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Destructive Engines</span>
-            <ShieldX className="w-4 h-4 text-red-500" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">Destructive Engines</span>
+            <ShieldX className="w-3.5 h-3.5 text-rose-500" />
           </div>
-          <div className="mt-2 text-xl font-bold text-red-600">DISABLED</div>
-          <p className="mt-1 text-[11px] text-slate-400">Foundation phase safety invariant</p>
+          <div className="mt-1 text-base font-bold text-rose-600 dark:text-rose-400">DISABLED</div>
+          <p className="mt-0.5 text-[10px] text-slate-400">Foundation phase safety invariant</p>
         </div>
       </div>
 
@@ -328,14 +382,14 @@ export const SafetyInterlocksPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Form */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs space-y-4">
-            <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+          <div className="border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-panel p-4 space-y-4">
+            <h2 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
               1. Select Target & Operation
             </h2>
 
             {/* Target Select */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Discovered Physical Device / Volume
               </label>
               <select
@@ -348,7 +402,7 @@ export const SafetyInterlocksPage: React.FC = () => {
                     setSelectedTargetType('PhysicalDevice');
                   }
                 }}
-                className="w-full text-xs px-3 py-2 border border-slate-200 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                className="w-full text-xs px-3 py-2 border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-surface text-slate-900 dark:text-slate-100 focus:outline-none"
               >
                 {devices.map((d) => (
                   <option key={d.device_id} value={d.device_id}>
@@ -358,17 +412,20 @@ export const SafetyInterlocksPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Custom Path Override (for Files/Folders/Volumes) */}
+            {/* Custom Path Override */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Or Custom Path / Mount Point (Optional)
               </label>
-              <input
-                type="text"
+              <Input
+                size="sm"
                 placeholder="e.g. C:\ or C:\Evidence\file.bin"
                 value={customPath}
-                onChange={(e) => setCustomPath(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-200 rounded bg-white text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                onValueChange={setCustomPath}
+                className="font-mono text-xs"
+                classNames={{
+                  inputWrapper: 'bg-white dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border rounded-xs',
+                }}
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Specifying a system path like C:\ will test the hard system block.
@@ -377,13 +434,13 @@ export const SafetyInterlocksPage: React.FC = () => {
 
             {/* Operation Type Select */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Operation Category
               </label>
               <select
                 value={selectedOpType}
                 onChange={(e) => setSelectedOpType(e.target.value as OperationType)}
-                className="w-full text-xs px-3 py-2 border border-slate-200 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                className="w-full text-xs px-3 py-2 border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-surface text-slate-900 dark:text-slate-100 focus:outline-none"
               >
                 <option value="DriveErasure">DriveErasure (Destructive / Disabled)</option>
                 <option value="FileErasure">FileErasure (Destructive / Disabled)</option>
@@ -394,31 +451,28 @@ export const SafetyInterlocksPage: React.FC = () => {
             </div>
 
             {errorMsg && (
-              <div className="p-3 text-xs bg-rose-50 border border-rose-200 rounded text-rose-700">
+              <div className="p-3 text-xs bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xs text-rose-700 dark:text-rose-300">
                 {errorMsg}
               </div>
             )}
 
-            <button
-              onClick={handleEvaluate}
-              disabled={evaluating}
-              className="w-full py-2 px-4 text-xs font-semibold rounded bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-xs"
+            <Button
+              onPress={handleEvaluate}
+              isDisabled={evaluating}
+              isLoading={evaluating}
+              startContent={!evaluating && <ShieldAlert className="w-3.5 h-3.5" />}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold py-2 shadow-xs rounded-xs"
             >
-              {evaluating ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <ShieldAlert className="w-3.5 h-3.5" />
-              )}
               Evaluate Target & Safety Gate
-            </button>
+            </Button>
           </div>
         </div>
 
-        {/* Right Column: Decision Verdict Card */}
+        {/* Right Column: Decision Verdict */}
         <div className="lg:col-span-7">
-          <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs space-y-5 h-full">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+          <div className="border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-panel p-4 space-y-4 h-full">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-workstation-border pb-3">
+              <h2 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                 2. Safety Gate Verdict
               </h2>
               {currentDecision && getDecisionBadge(currentDecision.decision)}
@@ -428,7 +482,7 @@ export const SafetyInterlocksPage: React.FC = () => {
               <div className="space-y-4">
                 {/* Status & Code */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs px-2.5 py-1 bg-slate-100 border border-slate-200 rounded text-slate-800 font-semibold">
+                  <span className="font-mono text-xs px-2.5 py-1 bg-slate-100 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border rounded-xs text-slate-800 dark:text-slate-200 font-semibold">
                     {currentDecision.reason_code}
                   </span>
                   {getRiskBadge(currentDecision.risk_level)}
@@ -439,14 +493,14 @@ export const SafetyInterlocksPage: React.FC = () => {
 
                 {/* Explanation Box */}
                 <div
-                  className={`p-3.5 rounded-md border text-xs leading-relaxed ${
+                  className={`p-3.5 rounded-xs border text-xs leading-relaxed ${
                     currentDecision.decision === 'Blocked'
-                      ? 'bg-red-50/70 border-red-200 text-red-900'
+                      ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
                       : currentDecision.decision === 'RequiresConfirmation'
-                      ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                      ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200'
                       : currentDecision.decision === 'Allowed'
-                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                      : 'bg-rose-50/70 border-rose-200 text-rose-900'
+                      ? 'bg-slate-100 dark:bg-workstation-surface border-slate-300 dark:border-workstation-border text-slate-900 dark:text-slate-100'
+                      : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-200'
                   }`}
                 >
                   <p className="font-semibold mb-1">Evaluation Details:</p>
@@ -455,37 +509,37 @@ export const SafetyInterlocksPage: React.FC = () => {
 
                 {/* Target Architecture Inspection */}
                 {currentDecision.target_snapshot && (
-                  <div className="border border-slate-200 rounded p-3.5 bg-slate-50/50 space-y-2.5">
-                    <h3 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                  <div className="border border-slate-200 dark:border-workstation-border rounded-xs p-3.5 bg-slate-50/50 dark:bg-workstation-surface space-y-2.5">
+                    <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
                       <Cpu className="w-3.5 h-3.5 text-slate-500" />
                       Live Target Snapshot & Geometry
                     </h3>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs font-mono">
                       <div>
                         <span className="text-slate-400">Identifier: </span>
-                        <span className="text-slate-800 font-semibold">{currentDecision.target_snapshot.target_identifier}</span>
+                        <span className="text-slate-800 dark:text-slate-200 font-semibold">{currentDecision.target_snapshot.target_identifier}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">Capacity: </span>
-                        <span className="text-slate-800">{formatBytes(currentDecision.target_snapshot.capacity_bytes)}</span>
+                        <span className="text-slate-800 dark:text-slate-200">{formatBytes(currentDecision.target_snapshot.capacity_bytes)}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">Classification: </span>
-                        <span className="text-slate-800">{currentDecision.target_snapshot.classification || 'N/A'}</span>
+                        <span className="text-slate-800 dark:text-slate-200">{currentDecision.target_snapshot.classification || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">Filesystem: </span>
-                        <span className="text-slate-800">{currentDecision.target_snapshot.filesystem || 'Raw / None'}</span>
+                        <span className="text-slate-800 dark:text-slate-200">{currentDecision.target_snapshot.filesystem || 'Raw / None'}</span>
                       </div>
                       <div>
                         <span className="text-slate-400">System Partition: </span>
-                        <span className={currentDecision.target_snapshot.is_system ? 'text-red-700 font-bold' : 'text-slate-800'}>
+                        <span className={currentDecision.target_snapshot.is_system ? 'text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-200'}>
                           {currentDecision.target_snapshot.is_system ? 'YES (PROTECTED)' : 'NO'}
                         </span>
                       </div>
                       <div>
                         <span className="text-slate-400">Boot Partition: </span>
-                        <span className={currentDecision.target_snapshot.is_boot ? 'text-red-700 font-bold' : 'text-slate-800'}>
+                        <span className={currentDecision.target_snapshot.is_boot ? 'text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-200'}>
                           {currentDecision.target_snapshot.is_boot ? 'YES (PROTECTED)' : 'NO'}
                         </span>
                       </div>
@@ -495,35 +549,36 @@ export const SafetyInterlocksPage: React.FC = () => {
 
                 {/* Two-Stage Confirmation Action */}
                 {currentDecision.decision === 'RequiresConfirmation' && (
-                  <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-md space-y-2">
-                    <div className="flex items-center justify-between">
+                  <div className="p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xs space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <h4 className="text-xs font-semibold text-amber-900">
+                        <h4 className="text-xs font-semibold text-amber-900 dark:text-amber-200">
                           Stage 1 Review Complete — Confirmation Required
                         </h4>
-                        <p className="text-[11px] text-amber-700">
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400">
                           Generate a time-bound challenge bound to this exact target snapshot.
                         </p>
                       </div>
-                      <button
-                        onClick={handleRequestConfirmation}
-                        disabled={evaluating}
-                        className="px-3.5 py-1.5 text-xs font-semibold rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors flex items-center gap-1.5 shadow-xs"
+                      <Button
+                        size="sm"
+                        onPress={handleRequestConfirmation}
+                        isDisabled={evaluating}
+                        endContent={<ArrowRight className="w-3.5 h-3.5" />}
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs rounded-xs"
                       >
                         Request Confirmation
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}
 
                 {confirmResult && (
-                  <div className="p-3.5 bg-slate-100 border border-slate-300 rounded text-xs text-slate-800 space-y-1">
-                    <div className="flex items-center gap-1.5 font-semibold text-emerald-800">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <div className="p-3.5 bg-slate-100 dark:bg-workstation-surface border border-slate-300 dark:border-workstation-border rounded-xs text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100">
+                      <CheckCircle2 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
                       Confirmation Committed (ID: {confirmResult.evaluation_id.slice(0, 8)}...)
                     </div>
-                    <p className="text-[11px] text-slate-600">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400">
                       {confirmResult.message}
                     </p>
                   </div>
@@ -531,7 +586,7 @@ export const SafetyInterlocksPage: React.FC = () => {
               </div>
             ) : (
               <div className="py-16 text-center space-y-2 text-slate-400">
-                <ShieldAlert className="w-10 h-10 mx-auto text-slate-300" />
+                <ShieldAlert className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
                 <p className="text-xs font-medium">Select a target and click &ldquo;Evaluate Target & Safety Gate&rdquo;</p>
                 <p className="text-[11px] text-slate-400">
                   Evaluates RBAC role permissions, OS protection, risk classification, and method compatibility.
@@ -543,160 +598,166 @@ export const SafetyInterlocksPage: React.FC = () => {
       </div>
 
       {/* Confirmation Modal */}
-      {isConfirmModalOpen && challenge && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-lg max-w-lg w-full p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2 text-amber-700">
+      <Modal
+        isOpen={isConfirmModalOpen && !!challenge}
+        onClose={() => setIsConfirmModalOpen(false)}
+        size="lg"
+        classNames={{
+          base: 'bg-white dark:bg-workstation-panel border border-slate-200 dark:border-workstation-border',
+          header: 'border-b border-slate-100 dark:border-workstation-border',
+          footer: 'border-t border-slate-100 dark:border-workstation-border',
+        }}
+      >
+        <ModalContent>
+          {challenge && (
+            <>
+              <ModalHeader className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="text-sm font-semibold text-slate-900">
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   Stage 2: Explicit Destructive Confirmation
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsConfirmModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-mono"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-slate-700">
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-900 space-y-1">
-                <p className="font-semibold">WARNING: HIGH-RISK SANITIZATION ACTION</p>
-                <p className="text-[11px]">
-                  All partitions, filesystem structures, and data on this target would be unrecoverable.
-                </p>
-              </div>
-
-              <div className="border border-slate-200 rounded p-3 bg-slate-50 space-y-1.5 font-mono text-[11px]">
-                <div><span className="text-slate-400">Operation ID:</span> {challenge.operation_id}</div>
-                <div><span className="text-slate-400">Target:</span> {challenge.target.identifier}</div>
-                <div><span className="text-slate-400">Snapshot Capacity:</span> {formatBytes(challenge.target_snapshot.capacity_bytes)}</div>
-                <div><span className="text-slate-400">Challenge TTL:</span> 5 minutes (Expires: {new Date(challenge.expires_at).toLocaleTimeString()})</div>
-              </div>
-
-              {/* Warning Acknowledgment */}
-              <label className="flex items-start gap-2 pt-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={warningAck}
-                  onChange={(e) => setWarningAck(e.target.checked)}
-                  className="rounded border-slate-300 text-slate-900 focus:ring-slate-500 mt-0.5"
-                />
-                <span className="text-xs text-slate-800">
-                  I understand the consequences and confirm that I intend to target this specific storage device.
                 </span>
-              </label>
+              </ModalHeader>
 
-              {/* Typed Confirmation */}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Type <span className="font-mono font-bold text-slate-900">{challenge.target.identifier}</span> to confirm:
-                </label>
-                <input
-                  type="text"
-                  placeholder={challenge.target.identifier}
-                  value={typedTargetInput}
-                  onChange={(e) => setTypedTargetInput(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-200 rounded bg-white text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-              </div>
+              <ModalBody className="py-4 space-y-3 text-xs text-slate-700 dark:text-slate-300">
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded text-rose-900 dark:text-rose-200 space-y-1">
+                  <p className="font-semibold">WARNING: HIGH-RISK SANITIZATION ACTION</p>
+                  <p className="text-[11px]">
+                    All partitions, filesystem structures, and data on this target would be unrecoverable.
+                  </p>
+                </div>
 
-              {/* Safety notice in modal */}
-              <p className="text-[11px] text-slate-500 italic">
-                * Note: Submitting confirmation will re-verify the live device to prevent TOCTOU substitution, and safely terminate because destructive executors are disabled.
-              </p>
-            </div>
+                <div className="border border-slate-200 dark:border-workstation-border rounded p-3 bg-slate-50 dark:bg-workstation-surface space-y-1.5 font-mono text-[11px]">
+                  <div><span className="text-slate-400">Operation ID:</span> {challenge.operation_id}</div>
+                  <div><span className="text-slate-400">Target:</span> {challenge.target.identifier}</div>
+                  <div><span className="text-slate-400">Snapshot Capacity:</span> {formatBytes(challenge.target_snapshot.capacity_bytes)}</div>
+                  <div><span className="text-slate-400">Challenge TTL:</span> 5 minutes (Expires: {new Date(challenge.expires_at).toLocaleTimeString()})</div>
+                </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setIsConfirmModalOpen(false)}
-                className="px-3 py-1.5 text-xs font-medium rounded border border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitConfirmation}
-                disabled={!warningAck || typedTargetInput.trim() !== challenge.target.identifier.trim() || submittingConfirm}
-                className={`px-4 py-1.5 text-xs font-semibold rounded text-white transition-colors flex items-center gap-1.5 shadow-xs ${
-                  warningAck && typedTargetInput.trim() === challenge.target.identifier.trim() && !submittingConfirm
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-slate-300 cursor-not-allowed'
-                }`}
-              >
-                {submittingConfirm ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                Confirm Operation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                {/* Warning Acknowledgment */}
+                <Checkbox
+                  size="sm"
+                  color="danger"
+                  isSelected={warningAck}
+                  onValueChange={setWarningAck}
+                  classNames={{
+                    label: 'text-xs text-slate-800 dark:text-slate-200',
+                  }}
+                >
+                  I understand the consequences and confirm that I intend to target this specific storage device.
+                </Checkbox>
+
+                {/* Typed Confirmation */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Type <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{challenge.target.identifier}</span> to confirm:
+                  </label>
+                  <Input
+                    size="sm"
+                    placeholder={challenge.target.identifier}
+                    value={typedTargetInput}
+                    onValueChange={setTypedTargetInput}
+                    className="font-mono text-xs"
+                    classNames={{
+                      inputWrapper: 'bg-white dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border',
+                    }}
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-500 italic">
+                  * Note: Submitting confirmation will re-verify the live device to prevent TOCTOU substitution, and safely terminate because destructive executors are disabled.
+                </p>
+              </ModalBody>
+
+              <ModalFooter>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => setIsConfirmModalOpen(false)}
+                  className="text-xs border border-slate-200 dark:border-workstation-border bg-white dark:bg-workstation-panel text-slate-700 dark:text-slate-300"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onPress={handleSubmitConfirmation}
+                  isDisabled={!warningAck || typedTargetInput.trim() !== challenge.target.identifier.trim() || submittingConfirm}
+                  isLoading={submittingConfirm}
+                  startContent={!submittingConfirm && <Check className="w-3.5 h-3.5" />}
+                  className={`text-xs font-semibold px-4 text-white ${
+                    warningAck && typedTargetInput.trim() === challenge.target.identifier.trim() && !submittingConfirm
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed'
+                  }`}
+                >
+                  Confirm Operation
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       {/* Evaluation Audit History Table */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-2xs space-y-3">
-        <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
-          Recent Safety Evaluations (Tamper-Evident Audit Record)
-        </h3>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium text-[11px] uppercase tracking-wider">
-              <tr>
-                <th className="py-2.5 px-3">Timestamp</th>
-                <th className="py-2.5 px-3">Actor</th>
-                <th className="py-2.5 px-3">Operation</th>
-                <th className="py-2.5 px-3">Target</th>
-                <th className="py-2.5 px-3">Decision</th>
-                <th className="py-2.5 px-3">Reason Code</th>
-                <th className="py-2.5 px-3">Risk</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-              {evalHistory.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-4 text-center text-slate-400 italic">
-                    No safety evaluations recorded yet.
-                  </td>
-                </tr>
-              ) : (
-                evalHistory.map((item) => (
-                  <tr key={item.evaluation_id} className="hover:bg-slate-50/50">
-                    <td className="py-2.5 px-3 text-slate-500">
-                      {new Date(item.evaluated_at).toLocaleTimeString()}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-900 font-sans font-medium">
-                      {item.actor_id || 'System'}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-800">{item.operation_type}</td>
-                    <td className="py-2.5 px-3 text-slate-600 truncate max-w-xs" title={item.target.identifier}>
-                      {item.target.identifier}
-                    </td>
-                    <td className="py-2.5 px-3 font-sans">
-                      {item.decision === 'Allowed' ? (
-                        <span className="text-emerald-700 font-semibold">Allowed</span>
-                      ) : item.decision === 'RequiresConfirmation' ? (
-                        <span className="text-amber-700 font-semibold">Requires Confirmation</span>
-                      ) : item.decision === 'Blocked' ? (
-                        <span className="text-red-700 font-bold">Blocked</span>
-                      ) : (
-                        <span className="text-rose-700 font-semibold">Denied</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-600">{item.reason_code}</td>
-                    <td className="py-2.5 px-3 font-sans">{getRiskBadge(item.risk_level)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      <div className="border border-slate-200 dark:border-workstation-border rounded-xs bg-white dark:bg-workstation-panel overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-workstation-border flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-slate-400" />
+            Recent Safety Evaluations (Tamper-Evident Audit Record)
+          </h3>
+          <span className="text-[10px] font-mono text-slate-400">{evalHistory.length} Record(s)</span>
         </div>
+
+        <Table
+          aria-label="Safety Evaluations Table"
+          removeWrapper
+          classNames={{
+            base: 'min-w-full',
+            table: 'min-w-full',
+            thead: 'border-b border-slate-200 dark:border-workstation-border',
+            th: 'bg-slate-50 dark:bg-workstation-surface text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider h-8 py-0 px-3',
+            td: 'py-2 px-3 text-xs text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-workstation-border',
+          }}
+        >
+          <TableHeader>
+            <TableColumn>TIMESTAMP</TableColumn>
+            <TableColumn>ACTOR</TableColumn>
+            <TableColumn>OPERATION</TableColumn>
+            <TableColumn>TARGET</TableColumn>
+            <TableColumn>DECISION</TableColumn>
+            <TableColumn>REASON CODE</TableColumn>
+            <TableColumn>RISK</TableColumn>
+          </TableHeader>
+          <TableBody emptyContent="No safety evaluations recorded yet.">
+            {evalHistory.map((item) => (
+              <TableRow key={item.evaluation_id} className="hover:bg-slate-50/50 dark:hover:bg-workstation-surface/50">
+                <TableCell className="font-mono text-[11px] text-slate-400">
+                  {new Date(item.evaluated_at).toLocaleTimeString()}
+                </TableCell>
+                <TableCell className="font-medium text-slate-900 dark:text-slate-100">
+                  {item.actor_id || 'System'}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {item.operation_type}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-slate-600 dark:text-slate-400 truncate max-w-xs" title={item.target.identifier}>
+                  {item.target.identifier}
+                </TableCell>
+                <TableCell>
+                  {getDecisionBadge(item.decision)}
+                </TableCell>
+                <TableCell className="font-mono text-[11px]">
+                  {item.reason_code}
+                </TableCell>
+                <TableCell>
+                  {getRiskBadge(item.risk_level)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
 };
+
+export default SafetyInterlocksPage;

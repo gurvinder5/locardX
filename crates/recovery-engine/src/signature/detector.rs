@@ -14,18 +14,24 @@ pub struct CandidateHeader {
 pub struct SignatureDetector {
     #[allow(dead_code)]
     registry: SignatureRegistry,
-    first_byte_table: Vec<Vec<FileSignature>>,
+    first_byte_table: Box<[Vec<FileSignature>; 256]>,
 }
 
 impl SignatureDetector {
     pub fn new(registry: SignatureRegistry) -> Self {
-        let mut first_byte_table: Vec<Vec<FileSignature>> = vec![Vec::new(); 256];
+        // Construct fixed 256-bucket dispatch array for O(1) L1-cache friendly first-byte lookup
+        let mut table: Vec<Vec<FileSignature>> = (0..256).map(|_| Vec::new()).collect();
         for sig in registry.all() {
             if !sig.header_magic.is_empty() {
                 let first = sig.header_magic[0] as usize;
-                first_byte_table[first].push(sig.clone());
+                table[first].push(sig.clone());
             }
         }
+        let boxed_slice = table.into_boxed_slice();
+        let first_byte_table: Box<[Vec<FileSignature>; 256]> = match boxed_slice.try_into() {
+            Ok(arr) => arr,
+            Err(_) => unreachable!("Table slice length is strictly 256"),
+        };
         Self {
             registry,
             first_byte_table,
@@ -34,7 +40,7 @@ impl SignatureDetector {
 
     /// Scans a buffer at a given base global offset in a single linear pass, yielding all detected headers.
     pub fn scan_buffer(&self, buffer: &[u8], base_offset: u64) -> Vec<CandidateHeader> {
-        let mut candidates = Vec::new();
+        let mut candidates = Vec::with_capacity(32);
         let buf_len = buffer.len();
         let mut pos = 0;
 

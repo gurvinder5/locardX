@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
 import { HardDrive, Plus, Tag, Hash, FileCode } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Select,
+  SelectItem,
+  Chip,
+} from '@heroui/react';
 import { CaseEvidence, EvidenceType } from '../../types/case';
 
 interface CaseEvidenceViewProps {
@@ -56,183 +63,190 @@ export const CaseEvidenceView: React.FC<CaseEvidenceViewProps> = ({
   const getBadge = (t: EvidenceType) => {
     switch (t) {
       case 'physical_storage':
-        return 'bg-amber-50 text-amber-700 border-amber-200';
+        return 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700';
       case 'acquisition_image':
-        return 'bg-sky-50 text-sky-700 border-sky-200';
       case 'recovered_dataset':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        return 'bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700';
       default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
+        return 'bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800';
     }
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] p-4 space-y-4 rounded-xs">
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#26313D] pb-3">
         <div className="flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-sky-600" />
-          <h3 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+          <HardDrive className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+          <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
             Case Evidence Inventory
           </h3>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+          <Chip
+            size="sm"
+            variant="flat"
+            className="text-[10px] h-5 font-mono bg-slate-100 dark:bg-[#1B2530] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#26313D]"
+          >
             {evidence.length}
-          </span>
+          </Chip>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-800 transition-colors"
+        <Button
+          size="sm"
+          variant="light"
+          onPress={() => setShowForm(!showForm)}
+          startContent={<Plus className="w-3.5 h-3.5" />}
+          className="text-xs font-semibold text-slate-700 dark:text-slate-300 h-8"
         >
-          <Plus className="w-3.5 h-3.5" />
-          <span>{showForm ? 'Cancel' : 'Introduce Evidence'}</span>
-        </button>
+          {showForm ? 'Cancel' : 'Introduce Evidence'}
+        </Button>
       </div>
 
-      {/* Add Evidence Form */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="p-3 bg-slate-50 border border-slate-200 rounded-md space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-700 mb-1">
-                Label / Tag *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Seized Kingston Flash Drive"
+      <div className="space-y-4">
+        {/* Add Evidence Form */}
+        {showForm && (
+          <form onSubmit={handleSubmit} className="p-4 bg-slate-50 dark:bg-[#10161D] border border-slate-200 dark:border-[#26313D] rounded-lg space-y-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input
+                size="sm"
+                variant="bordered"
+                label="Label / Tag *"
+                placeholder="e.g. Seized Flash Drive"
                 value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                required
-                className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-hidden focus:border-sky-500"
+                onValueChange={setLabel}
+                isRequired
               />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-700 mb-1">
-                Evidence Type *
-              </label>
-              <select
-                value={evType}
-                onChange={(e) => setEvType(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-hidden focus:border-sky-500"
-              >
-                <option value="physical_storage">Physical Storage Device</option>
-                <option value="acquisition_image">Forensic Bitstream Image (.dd/.raw)</option>
-                <option value="recovered_dataset">Recovered Files Dataset</option>
-                <option value="logical_file">Logical File Artifact</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-700 mb-1">
-                Device ID / Path *
-              </label>
-              <input
-                type="text"
-                placeholder="\\\\.\\PhysicalDrive1 or /evidence/image.raw"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                required
-                className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-hidden focus:border-sky-500"
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-700 mb-1">
-                SHA-256 Digest (Optional)
-              </label>
-              <input
-                type="text"
+              <Select
+                size="sm"
+                variant="bordered"
+                label="Evidence Type *"
+                selectedKeys={[evType]}
+                onChange={(e) => setEvType(e.target.value)}
+              >
+                <SelectItem key="physical_storage">Physical Storage Device</SelectItem>
+                <SelectItem key="acquisition_image">Forensic Bitstream Image (.dd/.raw)</SelectItem>
+                <SelectItem key="recovered_dataset">Recovered Files Dataset</SelectItem>
+                <SelectItem key="logical_file">Logical File Artifact</SelectItem>
+              </Select>
+
+              <Input
+                size="sm"
+                variant="bordered"
+                label="Device ID / Path *"
+                placeholder="\\\\.\\PhysicalDrive1 or image.dd"
+                value={identifier}
+                onValueChange={setIdentifier}
+                isRequired
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                size="sm"
+                variant="bordered"
+                label="SHA-256 Digest (Optional)"
                 placeholder="64-character hex digest"
                 value={sha256}
-                onChange={(e) => setSha256(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 font-mono rounded border border-slate-300 bg-white focus:outline-hidden focus:border-sky-500"
+                onValueChange={setSha256}
+                classNames={{
+                  input: 'font-mono text-xs',
+                }}
               />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-700 mb-1">
-                Size in Bytes (Optional)
-              </label>
-              <input
+
+              <Input
+                size="sm"
+                variant="bordered"
                 type="number"
+                label="Size in Bytes (Optional)"
                 placeholder="e.g. 1000204886016"
                 value={sizeBytes}
-                onChange={(e) => setSizeBytes(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 bg-white focus:outline-hidden focus:border-sky-500"
+                onValueChange={setSizeBytes}
               />
             </div>
-          </div>
 
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={adding || !label.trim() || !identifier.trim()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              <span>{adding ? 'Registering...' : 'Register Evidence'}</span>
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Evidence Grid */}
-      {evidence.length === 0 ? (
-        <div className="py-8 text-center text-xs text-slate-400">
-          No evidence items logged under this case. Introduce physical media or link an acquisition image above.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {evidence.map((ev) => (
-            <div
-              key={ev.evidence_id}
-              className="p-3.5 bg-white border border-slate-200 rounded-md shadow-2xs space-y-2 hover:border-slate-300 transition-colors"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span
-                    className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${getBadge(
-                      ev.evidence_type
-                    )}`}
-                  >
-                    {ev.evidence_type.replace('_', ' ')}
-                  </span>
-                  <h4 className="text-xs font-semibold text-slate-900 mt-1">{ev.label}</h4>
-                </div>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                  {ev.evidence_id}
-                </span>
-              </div>
-
-              <div className="space-y-1 text-[11px] text-slate-600">
-                <div className="flex items-center gap-1.5">
-                  <Tag className="w-3 h-3 text-slate-400" />
-                  <span className="font-mono text-slate-700 truncate">{ev.identifier}</span>
-                </div>
-                {ev.size_bytes && (
-                  <div className="flex items-center gap-1.5">
-                    <FileCode className="w-3 h-3 text-slate-400" />
-                    <span>
-                      Size: <strong>{(ev.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</strong> ({ev.size_bytes.toLocaleString()} bytes)
-                    </span>
-                  </div>
-                )}
-                {ev.sha256 && (
-                  <div className="flex items-start gap-1.5 pt-1">
-                    <Hash className="w-3 h-3 text-emerald-600 shrink-0 mt-0.5" />
-                    <span className="font-mono text-[10px] text-slate-600 break-all bg-slate-50 p-1 rounded border border-slate-100">
-                      {ev.sha256}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                <span>Introduced by: {ev.introduced_by}</span>
-                <span>{new Date(ev.introduced_at).toLocaleDateString()}</span>
-              </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                color="primary"
+                type="submit"
+                isLoading={adding}
+                isDisabled={adding || !label.trim() || !identifier.trim()}
+                startContent={!adding && <Plus className="w-3 h-3" />}
+                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold h-8"
+              >
+                {adding ? 'Registering...' : 'Register Evidence'}
+              </Button>
             </div>
-          ))}
-        </div>
-      )}
+          </form>
+        )}
+
+        {/* Evidence Grid */}
+        {evidence.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-400">
+            No evidence items logged under this case. Introduce physical media or link an acquisition image above.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 min-w-0">
+            {evidence.map((ev) => (
+              <div
+                key={ev.evidence_id}
+                className="p-3.5 bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] rounded-xs shadow-2xs space-y-2 hover:border-slate-300 dark:hover:border-slate-600 transition-colors min-w-0 overflow-hidden"
+              >
+                <div className="flex items-start justify-between gap-2 min-w-0">
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border inline-block ${getBadge(
+                        ev.evidence_type
+                      )}`}
+                    >
+                      {ev.evidence_type.replace('_', ' ')}
+                    </span>
+                    <h4 className="text-xs font-semibold text-slate-900 dark:text-white mt-1 truncate" title={ev.label}>
+                      {ev.label}
+                    </h4>
+                  </div>
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    className="text-[10px] font-mono bg-slate-50 dark:bg-[#1B2530] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#26313D] shrink-0 max-w-[130px] truncate"
+                    title={ev.evidence_id}
+                  >
+                    {ev.evidence_id}
+                  </Chip>
+                </div>
+
+                <div className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Tag className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="font-mono text-slate-700 dark:text-slate-300 truncate" title={ev.identifier}>
+                      {ev.identifier}
+                    </span>
+                  </div>
+                  {ev.size_bytes && (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <FileCode className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">
+                        Size: <strong>{(ev.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</strong> ({ev.size_bytes.toLocaleString()} bytes)
+                      </span>
+                    </div>
+                  )}
+                  {ev.sha256 && (
+                    <div className="flex items-start gap-1.5 pt-1 min-w-0">
+                      <Hash className="w-3 h-3 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5" />
+                      <span className="font-mono text-[10px] text-slate-600 dark:text-slate-400 break-all bg-slate-50 dark:bg-[#10161D] p-1 rounded-xs border border-slate-200 dark:border-[#26313D] block min-w-0 flex-1">
+                        {ev.sha256}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-[#26313D] flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <span className="truncate mr-2">Introduced by: {ev.introduced_by}</span>
+                  <span className="shrink-0">{new Date(ev.introduced_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -14,6 +14,11 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Chip,
+} from '@heroui/react';
 import { listAuditEvents, verifyAuditChain } from '../services/case';
 import { AuditEvent, AuditChainVerification } from '../types/case';
 
@@ -40,9 +45,10 @@ export const AuditTrailPage: React.FC = () => {
       ]);
       setEvents(eventList);
       setVerification(verifResult);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load audit events:', err);
-      setError(err?.message || 'Failed to query audit records from secure store.');
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Failed to query audit records from secure store.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -53,9 +59,10 @@ export const AuditTrailPage: React.FC = () => {
       setVerifying(true);
       const result = await verifyAuditChain();
       setVerification(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Audit verification error:', err);
-      setError(err?.message || 'Verification process encountered an error.');
+      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Verification process encountered an error.';
+      setError(msg);
     } finally {
       setVerifying(false);
     }
@@ -91,57 +98,61 @@ export const AuditTrailPage: React.FC = () => {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-workstation-border pb-5">
         <div>
-          <h2 className="text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-indigo-600" />
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             Tamper-Evident Audit Trail
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Cryptographic SHA-256 hash-chained operational ledger verifying all authentication, case, imaging, recovery, and sanitization events.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={handleVerifyChain}
-            disabled={verifying}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded text-xs font-medium shadow-2xs transition-colors"
+          <Button
+            size="sm"
+            onPress={handleVerifyChain}
+            isDisabled={verifying}
+            isLoading={verifying}
+            startContent={!verifying && <ShieldCheck className="w-3.5 h-3.5" />}
+            className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold text-xs px-4 shadow-sm"
           >
-            <ShieldCheck className={`w-3.5 h-3.5 ${verifying ? 'animate-spin' : ''}`} />
-            <span>{verifying ? 'Verifying Hashes...' : 'Verify Cryptographic Chain'}</span>
-          </button>
+            {verifying ? 'Verifying Hashes...' : 'Verify Cryptographic Chain'}
+          </Button>
 
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-xs font-medium shadow-2xs transition-colors"
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={loadData}
+            isDisabled={loading}
+            startContent={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
+            className="text-xs font-medium bg-white dark:bg-workstation-panel border border-slate-200 dark:border-workstation-border text-slate-700 dark:text-slate-300"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
-            <span>Refresh</span>
-          </button>
+            Refresh
+          </Button>
         </div>
       </div>
 
-      {/* Verification Status Card */}
+      {/* Verification Status Ribbon */}
       {verification && (
         <div
-          className={`p-4 rounded-md border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs ${
+          className={`border rounded-xs p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
             verification.is_valid
-              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-              : 'bg-rose-50 border-rose-200 text-rose-950'
+              ? 'bg-slate-100 dark:bg-workstation-surface border-slate-300 dark:border-workstation-border text-slate-900 dark:text-slate-100'
+              : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50 text-rose-950 dark:text-rose-200'
           }`}
         >
           <div className="flex items-center gap-3">
             {verification.is_valid ? (
-              <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-workstation-panel flex items-center justify-center text-slate-800 dark:text-slate-200 shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
               </div>
             ) : (
-              <div className="w-9 h-9 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-                <XCircle className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <XCircle className="w-4 h-4" />
               </div>
             )}
             <div>
@@ -149,28 +160,30 @@ export const AuditTrailPage: React.FC = () => {
                 <span className="text-xs font-bold uppercase tracking-wider">
                   {verification.is_valid ? 'Audit Chain Verified' : 'Audit Integrity Broken'}
                 </span>
-                <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                <Chip
+                  size="sm"
+                  variant="flat"
+                  className={`text-[10px] font-semibold ${
                     verification.is_valid
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-rose-100 text-rose-800'
+                      ? 'bg-slate-200 dark:bg-workstation-panel text-slate-800 dark:text-slate-200'
+                      : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
                   }`}
                 >
                   {verification.total_events} Sequential Records Validated
-                </span>
+                </Chip>
               </div>
-              <p className="text-xs mt-0.5 text-slate-600">
+              <p className="text-xs mt-0.5 text-slate-600 dark:text-slate-300">
                 {verification.details}
               </p>
             </div>
           </div>
 
           <div className="text-right shrink-0">
-            <div className="text-[11px] font-mono text-slate-500">
+            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
               Last Verified Sequence: #{verification.last_verified_sequence}
             </div>
             {verification.broken_sequence && (
-              <div className="text-[11px] font-mono text-rose-600 font-bold">
+              <div className="text-[11px] font-mono text-rose-600 dark:text-rose-400 font-bold">
                 Violation Detected at Sequence: #{verification.broken_sequence}
               </div>
             )}
@@ -180,32 +193,34 @@ export const AuditTrailPage: React.FC = () => {
 
       {/* Error alert */}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 flex items-center gap-2">
+        <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xs text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 shrink-0 text-rose-600" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-white border border-slate-200 rounded-md p-3.5 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-72">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
+      <div className="bg-white dark:bg-workstation-panel border border-slate-200 dark:border-workstation-border rounded-xs p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="w-full sm:w-72">
+          <Input
+            size="sm"
             placeholder="Search events, targets, hashes..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded focus:bg-white focus:outline-none focus:border-indigo-500"
+            onValueChange={setSearchQuery}
+            startContent={<Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+            classNames={{
+              inputWrapper: 'bg-slate-50 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border rounded-xs',
+            }}
           />
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
             <Filter className="w-3.5 h-3.5 text-slate-400" />
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 focus:bg-white focus:outline-none focus:border-indigo-500 text-slate-700"
+              className="text-xs bg-slate-50 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border rounded-xs px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none"
             >
               <option value="all">All Event Types ({events.length})</option>
               {eventTypes.map((type) => (
@@ -216,12 +231,12 @@ export const AuditTrailPage: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
             <span className="text-[11px] text-slate-400">Limit:</span>
             <select
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
-              className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 focus:bg-white focus:outline-none focus:border-indigo-500 text-slate-700"
+              className="text-xs bg-slate-50 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border rounded-xs px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none"
             >
               <option value={50}>50</option>
               <option value={100}>100</option>
@@ -233,14 +248,14 @@ export const AuditTrailPage: React.FC = () => {
       </div>
 
       {/* Events Table / Ledger */}
-      <div className="bg-white border border-slate-200 rounded-md shadow-2xs overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between text-xs font-semibold text-slate-700">
+      <div className="bg-white dark:bg-workstation-panel border border-slate-200 dark:border-workstation-border rounded-xs overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-workstation-border bg-slate-50/50 dark:bg-workstation-surface flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
           <div className="flex items-center gap-2">
             <Hash className="w-4 h-4 text-slate-500" />
-            <span>Cryptographic Chain Entries</span>
-            <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">
+            <span className="uppercase tracking-wider font-bold text-slate-800 dark:text-slate-200">Cryptographic Chain Entries</span>
+            <Chip size="sm" variant="flat" className="font-mono text-[10px] bg-slate-200 dark:bg-workstation-panel text-slate-700 dark:text-slate-300">
               {filteredEvents.length} shown
-            </span>
+            </Chip>
           </div>
           <span className="text-[11px] text-slate-400 font-normal">
             Linked list where current_hash = SHA256(prev_hash + sequence + event_data)
@@ -252,34 +267,34 @@ export const AuditTrailPage: React.FC = () => {
             {loading ? 'Reading audit chain from SQLite store...' : 'No audit records match the current filter.'}
           </div>
         ) : (
-          <div className="divide-y divide-slate-100 overflow-x-auto">
+          <div className="divide-y divide-slate-100 dark:divide-workstation-border overflow-x-auto">
             {filteredEvents.map((event) => (
               <div
                 key={event.event_id}
-                className="p-4 hover:bg-slate-50/80 transition-colors space-y-2 text-xs"
+                className="p-4 hover:bg-slate-50/80 dark:hover:bg-workstation-surface/60 transition-colors space-y-2 text-xs"
               >
                 {/* Event header line */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                    <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-workstation-surface px-1.5 py-0.5 rounded-xs border border-slate-200 dark:border-workstation-border">
                       #{event.sequence_number}
                     </span>
-                    <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px] border border-indigo-100">
+                    <Chip size="sm" variant="flat" className="font-semibold text-[11px] bg-slate-100 dark:bg-workstation-surface text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-workstation-border">
                       {event.event_type}
-                    </span>
+                    </Chip>
                     {event.target_ref && (
-                      <span className="font-mono text-[11px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                      <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-workstation-surface px-1.5 py-0.5 rounded-xs border border-slate-200 dark:border-workstation-border">
                         {event.target_ref}
                       </span>
                     )}
                   </div>
 
                   <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
-                    <span className="flex items-center gap-1 text-slate-500">
+                    <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
                       <User className="w-3 h-3 text-slate-400" />
                       {event.actor_id || 'SYSTEM'}
                     </span>
-                    <span className="flex items-center gap-1 text-slate-500">
+                    <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
                       <Clock className="w-3 h-3 text-slate-400" />
                       {new Date(event.timestamp).toLocaleString()}
                     </span>
@@ -287,46 +302,52 @@ export const AuditTrailPage: React.FC = () => {
                 </div>
 
                 {/* Event Details */}
-                <div className="text-slate-700 bg-slate-50 p-2.5 rounded border border-slate-150 font-sans text-xs">
+                <div className="text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-workstation-surface p-2.5 rounded-xs border border-slate-200 dark:border-workstation-border font-sans text-xs">
                   {event.details}
                 </div>
 
                 {/* Hashes: Prev Hash -> Current Hash */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 font-mono text-[10px]">
-                  <div className="flex items-center justify-between bg-slate-50/80 px-2.5 py-1.5 rounded border border-slate-200/80 text-slate-500">
+                  <div className="flex items-center justify-between bg-slate-50/80 dark:bg-workstation-surface px-2.5 py-1.5 rounded-xs border border-slate-200/80 dark:border-workstation-border text-slate-500 dark:text-slate-400">
                     <span className="shrink-0 text-slate-400 mr-2">PREV:</span>
                     <span className="truncate" title={event.prev_hash}>
                       {event.prev_hash}
                     </span>
-                    <button
-                      onClick={() => copyToClipboard(event.prev_hash, `${event.event_id}-prev`)}
-                      className="ml-1.5 p-0.5 hover:text-slate-800"
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      onPress={() => copyToClipboard(event.prev_hash, `${event.event_id}-prev`)}
+                      className="w-5 h-5 min-w-5 ml-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                       title="Copy previous hash"
                     >
                       {copiedHash === `${event.event_id}-prev` ? (
-                        <Check className="w-3 h-3 text-emerald-600" />
+                        <Check className="w-3 h-3 text-slate-800 dark:text-slate-200" />
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
-                    </button>
+                    </Button>
                   </div>
 
-                  <div className="flex items-center justify-between bg-slate-50/80 px-2.5 py-1.5 rounded border border-slate-200/80 text-slate-700">
-                    <span className="shrink-0 text-indigo-600 font-semibold mr-2">HASH:</span>
-                    <span className="truncate font-semibold text-slate-800" title={event.current_hash}>
+                  <div className="flex items-center justify-between bg-slate-50/80 dark:bg-workstation-surface px-2.5 py-1.5 rounded-xs border border-slate-200/80 dark:border-workstation-border text-slate-700 dark:text-slate-300">
+                    <span className="shrink-0 text-slate-800 dark:text-slate-200 font-semibold mr-2">HASH:</span>
+                    <span className="truncate font-semibold text-slate-800 dark:text-slate-200" title={event.current_hash}>
                       {event.current_hash}
                     </span>
-                    <button
-                      onClick={() => copyToClipboard(event.current_hash, `${event.event_id}-curr`)}
-                      className="ml-1.5 p-0.5 hover:text-slate-800"
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      onPress={() => copyToClipboard(event.current_hash, `${event.event_id}-curr`)}
+                      className="w-5 h-5 min-w-5 ml-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                       title="Copy current SHA-256 hash"
                     >
                       {copiedHash === `${event.event_id}-curr` ? (
-                        <Check className="w-3 h-3 text-emerald-600" />
+                        <Check className="w-3 h-3 text-slate-800 dark:text-slate-200" />
                       ) : (
                         <Copy className="w-3 h-3" />
                       )}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

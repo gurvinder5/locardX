@@ -5,7 +5,7 @@ use crate::signature::registry::SignatureRegistry;
 use crate::structure::parser::parse_file_structure;
 use crate::validation::validator::evaluate_candidate;
 use chrono::Utc;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -106,8 +106,8 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
     // Fast O(1) membership check for filesystem-discovered offsets
     let existing_set: HashSet<u64> = existing_offsets.iter().copied().collect();
 
-    // Active recovered byte intervals [start, end) to prevent redundant overlapping carving
-    let mut active_ranges: Vec<(u64, u64)> = Vec::new();
+    // Active recovered byte intervals mapping [start -> end) to prevent redundant overlapping carving with O(log N) lookup
+    let mut active_ranges: BTreeMap<u64, u64> = BTreeMap::new();
 
     let mut current_offset: u64 = 0;
     let mut recovered_files = Vec::new();
@@ -131,7 +131,7 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
         let candidates = detector.scan_buffer(&buffer[..bytes_to_read], current_offset);
 
         // Prune completed ranges behind current_offset
-        active_ranges.retain(|&(_, end)| end > current_offset);
+        active_ranges.retain(|_, &mut end| end > current_offset);
 
         for candidate in candidates {
             if let Some(token) = cancellation_token {
@@ -140,16 +140,16 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                 }
             }
 
-            // Skip if already found via filesystem at same offset
+            // Skip if already found via filesystem at same offset (O(1))
             if existing_set.contains(&candidate.global_offset) {
                 continue;
             }
 
-            // Avoid carving overlapping starts if already extracted in this run
-            if active_ranges.iter().any(|&(s, e)| {
-                candidate.global_offset >= s && candidate.global_offset < e
-            }) {
-                continue;
+            // Avoid carving overlapping starts if already extracted in this run (O(log N))
+            if let Some((&_s, &e)) = active_ranges.range(..=candidate.global_offset).next_back() {
+                if candidate.global_offset < e {
+                    continue;
+                }
             }
 
             candidates_evaluated += 1;
@@ -199,15 +199,37 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                     if max_read >= candidate.signature.min_size as usize
                         && max_read > available_in_buf.len()
                     {
-                        let mut candidate_buf = vec![0u8; max_read];
+                        // Two-stage probing: read a small 64 KiB header first to parse structure/markers (e.g. JPEG SOF/EOI, PNG IHDR)
+                        // This prevents allocating and reading multi-megabyte buffers for false positive candidate noise.
+                        let probe_size = (64 * 1024).min(max_read);
+                        let mut probe_buf = vec![0u8; probe_size];
                         if file.seek(SeekFrom::Start(candidate.global_offset)).is_ok()
-                            && file.read_exact(&mut candidate_buf).is_ok()
+                            && file.read_exact(&mut probe_buf).is_ok()
                         {
-                            parsed_opt = parse_file_structure(&candidate.file_type, &candidate_buf);
-                            if let Some(ref p) = parsed_opt {
-                                let actual = (p.detected_size as usize).min(candidate_buf.len());
-                                if actual >= candidate.signature.min_size as usize {
-                                    file_payload = Some(candidate_buf[..actual].to_vec());
+                            let probe_parsed = parse_file_structure(&candidate.file_type, &probe_buf);
+                            if let Some(ref p) = probe_parsed {
+                                let exact_size = (p.detected_size as usize)
+                                    .min(max_read)
+                                    .max(candidate.signature.min_size as usize);
+
+                                if exact_size <= probe_size {
+                                    let actual = exact_size.min(probe_buf.len());
+                                    parsed_opt = Some(p.clone());
+                                    file_payload = Some(probe_buf[..actual].to_vec());
+                                } else {
+                                    // Allocate only the exact needed payload size instead of blind max_read
+                                    let mut full_buf = vec![0u8; exact_size];
+                                    if file.seek(SeekFrom::Start(candidate.global_offset)).is_ok()
+                                        && file.read_exact(&mut full_buf).is_ok()
+                                    {
+                                        parsed_opt = parse_file_structure(&candidate.file_type, &full_buf);
+                                        if let Some(ref final_p) = parsed_opt {
+                                            let actual = (final_p.detected_size as usize).min(full_buf.len());
+                                            if actual >= candidate.signature.min_size as usize {
+                                                file_payload = Some(full_buf[..actual].to_vec());
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -374,7 +396,7 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                     created_at: Utc::now().to_rfc3339(),
                 };
 
-                active_ranges.push((candidate.global_offset, candidate.global_offset + actual_size));
+                active_ranges.insert(candidate.global_offset, candidate.global_offset + actual_size);
                 recovered_files.push(recovered);
             }
         }

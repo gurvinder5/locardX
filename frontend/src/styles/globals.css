@@ -3,5 +3,78 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --app-bg: #F8FAFC;
+  --app-sidebar: #FFFFFF;
+  --app-panel: #FFFFFF;
+  --app-elevated: #F1F5F9;
+  --app-text-primary: #111827;
+  --app-text-secondary: #64748B;
+  --app-border: #E2E8F0;
+  --app-hover: #F1F5F9;
+  --app-active-nav: #E9EEF4;
+}
+
+.dark, html.dark {
+  --app-bg: #0B0F14;
+  --app-sidebar: #10161D;
+  --app-panel: #151C24;
+  --app-elevated: #1B2530;
+  --app-text-primary: #E5E7EB;
+  --app-text-secondary: #929EAC;
+  --app-border: #26313D;
+  --app-hover: #1B2530;
+  --app-active-nav: #26313D;
+}
+
+body {
+  background-color: var(--app-bg);
+  color: var(--app-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+}
+
+main {
+  overflow-x: hidden !important;
+  max-width: 100%;
+}
+
+/* Custom scrollbars for clean desktop forensic workstation */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--app-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-text-secondary);
+}
+
+/* Hide scrollbar completely when scrollbar-none or no-scrollbar is applied */
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
+/* HeroUI monochromatic overrides to ensure strict discipline */
+.dark [data-slot="base"] {
+  --heroui-background: 11 15 20;
 }

@@ -233,6 +233,28 @@ impl SanitizationPlanner {
                     limitations.push("WARNING: Single-pass zero overwrite on flash media leaves inaccessible remanence in over-provisioned blocks.".to_string());
                     true
                 }
+                (
+                    SanitizationMethod::AtaSecureErase,
+                    MediaType::Ssd | MediaType::Hdd,
+                    SanitizationScope::PhysicalDevice,
+                ) => true,
+                (SanitizationMethod::AtaSecureErase, _, _) => {
+                    limitations.push("ATA Firmware Secure Erase is only supported for physical SATA SSD or HDD media.".to_string());
+                    false
+                }
+                (
+                    SanitizationMethod::BlockZeroOverwrite,
+                    MediaType::Hdd | MediaType::UsbRemovable | MediaType::MemoryCard | MediaType::ExternalStorage,
+                    _,
+                ) => true,
+                (
+                    SanitizationMethod::BlockZeroOverwrite,
+                    MediaType::Ssd | MediaType::NvmeSsd,
+                    _,
+                ) => {
+                    limitations.push("WARNING: Block-level zero overwrite on SSD/NVMe flash media leaves wear-leveling remanence in over-provisioned blocks.".to_string());
+                    true
+                }
                 (SanitizationMethod::Unsupported, _, _) => false,
                 _ => true,
             };
@@ -247,13 +269,18 @@ impl SanitizationPlanner {
             reason_codes.push(ReasonCode::ValidTarget);
         }
 
-        // 6. Strategy Selection
-        let final_strategy = requested_strategy.unwrap_or(default_strategy);
-
-        // 7. Standards Mapping
+        // 6. Standards Mapping
         let standard_def = SanitizationStandardsRegistry::find_by_method(final_method);
         let applicable_standard = standard_def.as_ref().map(|s| s.standard_name.to_string());
         let standard_method_id = standard_def.as_ref().map(|s| s.method_id.to_string());
+
+        // 7. Strategy Selection
+        let final_strategy = requested_strategy.unwrap_or_else(|| {
+            standard_def
+                .as_ref()
+                .map(|s| s.recommended_verification)
+                .unwrap_or(default_strategy)
+        });
 
         // 8. Risk Level
         let risk_level = if !method_applicable {
