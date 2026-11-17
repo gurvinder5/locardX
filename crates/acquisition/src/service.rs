@@ -2,8 +2,8 @@ use crate::destination::validate_destination;
 use crate::engine::AcquisitionEngine;
 use crate::models::{
     AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionDiagnostics,
-    AcquisitionFailureReason, AcquisitionPlan, AcquisitionProgress, AcquisitionRecordDto,
-    AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
+    AcquisitionFailureReason, AcquisitionPlan, AcquisitionProgress,
+    AcquisitionRecordDto, AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
 };
 use crate::platform::{AcquisitionSourceReader, RealAcquisitionReader};
 use crate::source::{create_source_snapshot, revalidate_source_snapshot};
@@ -16,6 +16,33 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::warn;
+
+pub const DEFAULT_CHUNK_SIZE_BYTES: usize = 1024 * 1024; // 1 MiB
+
+pub const SUPPORTED_CHUNK_SIZES: &[usize] = &[
+    512 * 1024,        // 512 KiB
+    1024 * 1024,       // 1 MiB
+    4 * 1024 * 1024,   // 4 MiB
+    8 * 1024 * 1024,   // 8 MiB
+    16 * 1024 * 1024,  // 16 MiB
+    32 * 1024 * 1024,  // 32 MiB
+];
+
+/// Validates that the requested buffer size is positive, reasonable, and among supported chunk sizes.
+/// Returns 1 MiB by default when `None` is provided.
+pub fn validate_chunk_size(chunk_size: Option<usize>) -> Result<usize, LocardError> {
+    match chunk_size {
+        None => Ok(DEFAULT_CHUNK_SIZE_BYTES),
+        Some(0) => Err(LocardError::Config(
+            "Acquisition chunk buffer size cannot be zero".to_string(),
+        )),
+        Some(size) if SUPPORTED_CHUNK_SIZES.contains(&size) => Ok(size),
+        Some(size) => Err(LocardError::Config(format!(
+            "Unsupported acquisition buffer size: {} bytes. Supported sizes are: 512 KiB (524288), 1 MiB (1048576), 4 MiB (4194304), 8 MiB (8388608), 16 MiB (16777216), 32 MiB (33554432).",
+            size
+        ))),
+    }
+}
 
 /// Coordinates forensic disk acquisition workflows, safety validations, persistence, and audit logging.
 pub struct AcquisitionService {
@@ -51,9 +78,12 @@ impl AcquisitionService {
         &self,
         source_device_id: &str,
         destination_path: &str,
+        chunk_size_bytes: Option<usize>,
         allow_overwrite: bool,
         actor_id: Option<&str>,
     ) -> Result<AcquisitionPlan, LocardError> {
+        let valid_chunk_size = validate_chunk_size(chunk_size_bytes)?;
+
         let snapshot = create_source_snapshot(self.reader.as_ref(), source_device_id)
             .map_err(|e| LocardError::Operation(e.to_string()))?;
 
@@ -75,14 +105,14 @@ impl AcquisitionService {
                 .to_string_lossy()
                 .to_string(),
             image_format: "raw".to_string(),
-            chunk_size_bytes: 1024 * 1024, // 1 MiB chunk
+            chunk_size_bytes: valid_chunk_size,
             required_space_bytes: snapshot.capacity_bytes,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
         let details = format!(
-            "Forensic acquisition planned for source {} ({} bytes) -> {}",
-            plan.source.device_id, plan.source.capacity_bytes, plan.destination_path
+            "Forensic acquisition planned for source {} ({} bytes, chunk buffer {} bytes) -> {}",
+            plan.source.device_id, plan.source.capacity_bytes, plan.chunk_size_bytes, plan.destination_path
         );
 
         let _ = self.audit.log_structured_event(
@@ -157,7 +187,9 @@ impl AcquisitionService {
                     underlying_error: Some(e.to_string()),
                     win32_error_code: None,
                     final_status: "Failed".to_string(),
+                    performance_stats: None,
                 }),
+                performance_stats: None,
                 audit_reference: "ACQUISITION_SOURCE_MUTATED".to_string(),
                 cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
                 cleanup_error: None,
@@ -222,7 +254,9 @@ impl AcquisitionService {
                         underlying_error: Some(e.to_string()),
                         win32_error_code: win32_code,
                         final_status: "Failed".to_string(),
+                        performance_stats: None,
                     }),
+                    performance_stats: None,
                     audit_reference: "ACQUISITION_FAILED".to_string(),
                     cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
                     cleanup_error: None,
@@ -253,6 +287,7 @@ impl AcquisitionService {
                     elapsed_seconds: 0.0,
                     eta_seconds: None,
                     stage: "Physical disk sector streaming started".to_string(),
+                    performance_stats: None,
                 },
             );
         }
@@ -267,7 +302,7 @@ impl AcquisitionService {
             store.insert(op_id_owned.clone(), prog);
         };
 
-        let engine_res = AcquisitionEngine::execute(
+        let engine_res = AcquisitionEngine::acquire(
             operation_id,
             stream,
             Path::new(&plan.destination_path),
@@ -293,7 +328,7 @@ impl AcquisitionService {
                     0.0
                 };
 
-                // Store final 100% progress state
+                // Store final 100% progress state with diagnostics
                 {
                     let mut store = self.latest_progress.lock().unwrap();
                     store.insert(
@@ -307,6 +342,7 @@ impl AcquisitionService {
                             elapsed_seconds: (out.elapsed_seconds * 10.0).round() / 10.0,
                             eta_seconds: Some(0.0),
                             stage: "Acquisition complete. Verified SHA-256 integrity.".to_string(),
+                            performance_stats: Some(out.diagnostics.clone()),
                         },
                     );
                 }
@@ -356,7 +392,9 @@ impl AcquisitionService {
                         underlying_error: None,
                         win32_error_code: None,
                         final_status: "Completed".to_string(),
+                        performance_stats: Some(out.diagnostics.clone()),
                     }),
+                    performance_stats: Some(out.diagnostics),
                     audit_reference: audit_ref,
                     cleanup_status: Some(ArtifactCleanupStatus::CleanupNotRequired),
                     cleanup_error: None,
@@ -437,7 +475,9 @@ impl AcquisitionService {
                         underlying_error: Some(reason.to_string()),
                         win32_error_code: win32_code,
                         final_status: status.to_string(),
+                        performance_stats: None,
                     }),
+                    performance_stats: None,
                     cleanup_status,
                     cleanup_error,
                     leftover_artifact_path,
@@ -649,6 +689,7 @@ impl AcquisitionService {
                     average_throughput_mbps: (avg_throughput * 10.0).round() / 10.0,
                     failure_reason,
                     diagnostics: None,
+                    performance_stats: None,
                     cleanup_status: None,
                     cleanup_error: None,
                     leftover_artifact_path: None,

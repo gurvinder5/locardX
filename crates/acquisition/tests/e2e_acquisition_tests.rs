@@ -130,6 +130,7 @@ fn test_04_toctou_mutation_detection() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("operator_1"),
         )
@@ -183,6 +184,7 @@ fn test_05_successful_acquisition_and_streaming_sha256() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("forensic_agent"),
         )
@@ -326,6 +328,7 @@ fn test_09_database_persistence_and_retrieval() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("investigator_smith"),
         )
@@ -357,6 +360,7 @@ fn test_10_recovery_artifact_handoff_and_integrity_check() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("operator"),
         )
@@ -413,6 +417,7 @@ fn test_11_incomplete_acquisition_cannot_produce_artifact() {
         average_throughput_mbps: 0.0,
         failure_reason: Some(AcquisitionFailureReason::SourceDisconnected),
         diagnostics: None,
+        performance_stats: None,
         cleanup_status: None,
         cleanup_error: None,
         leftover_artifact_path: None,
@@ -483,4 +488,121 @@ fn test_12_startup_crash_recovery_sweep() {
         recovered_record.failure_reason,
         Some(AcquisitionFailureReason::Interrupted)
     ));
+}
+
+#[test]
+fn test_13_validate_chunk_sizes_and_defaults() {
+    use locardx_acquisition::{validate_chunk_size, DEFAULT_CHUNK_SIZE_BYTES, SUPPORTED_CHUNK_SIZES};
+
+    // None defaults to 1 MiB
+    assert_eq!(validate_chunk_size(None).unwrap(), DEFAULT_CHUNK_SIZE_BYTES);
+    assert_eq!(validate_chunk_size(None).unwrap(), 1024 * 1024);
+
+    // All supported sizes pass
+    for &size in SUPPORTED_CHUNK_SIZES {
+        assert_eq!(validate_chunk_size(Some(size)).unwrap(), size);
+    }
+
+    // Zero is rejected
+    assert!(validate_chunk_size(Some(0)).is_err());
+
+    // Unsupported sizes are rejected
+    assert!(validate_chunk_size(Some(100)).is_err());
+    assert!(validate_chunk_size(Some(64 * 1024)).is_err());
+    assert!(validate_chunk_size(Some(64 * 1024 * 1024)).is_err());
+}
+
+#[test]
+fn test_14_plan_preserves_custom_chunk_size() {
+    let (_, _, _, service) = setup_test_env(1024 * 1024);
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dest_file = temp_dir.path().join("plan_chunk.raw");
+
+    // Default 1 MiB
+    let plan_default = service
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_file.to_str().unwrap(),
+            None,
+            true,
+            Some("agent_default"),
+        )
+        .unwrap();
+    assert_eq!(plan_default.chunk_size_bytes, 1024 * 1024);
+
+    // Explicit 4 MiB
+    let plan_4mb = service
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_file.to_str().unwrap(),
+            Some(4 * 1024 * 1024),
+            true,
+            Some("agent_4mb"),
+        )
+        .unwrap();
+    assert_eq!(plan_4mb.chunk_size_bytes, 4 * 1024 * 1024);
+
+    // Explicit 8 MiB
+    let plan_8mb = service
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_file.to_str().unwrap(),
+            Some(8 * 1024 * 1024),
+            true,
+            Some("agent_8mb"),
+        )
+        .unwrap();
+    assert_eq!(plan_8mb.chunk_size_bytes, 8 * 1024 * 1024);
+
+    // Invalid zero rejected
+    let err_zero = service.create_plan(
+        r"\\.\PhysicalDrive1",
+        dest_file.to_str().unwrap(),
+        Some(0),
+        true,
+        None,
+    );
+    assert!(err_zero.is_err());
+}
+
+#[test]
+fn test_15_chunk_size_invariance_and_diagnostics() {
+    let capacity = 3 * 1024 * 1024 + 128 * 1024; // 3.125 MiB (non-power-of-2 to test partial chunk)
+    let (_, _, _, service) = setup_test_env(capacity);
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let dest_512k = temp_dir.path().join("img_512k.raw");
+    let dest_1m = temp_dir.path().join("img_1m.raw");
+    let dest_4m = temp_dir.path().join("img_4m.raw");
+
+    let plan_512k = service
+        .create_plan(r"\\.\PhysicalDrive1", dest_512k.to_str().unwrap(), Some(512 * 1024), true, None)
+        .unwrap();
+    let res_512k = service.execute_acquisition("op-invar-512k", &plan_512k, None).unwrap();
+
+    let plan_1m = service
+        .create_plan(r"\\.\PhysicalDrive1", dest_1m.to_str().unwrap(), Some(1024 * 1024), true, None)
+        .unwrap();
+    let res_1m = service.execute_acquisition("op-invar-1m", &plan_1m, None).unwrap();
+
+    let plan_4m = service
+        .create_plan(r"\\.\PhysicalDrive1", dest_4m.to_str().unwrap(), Some(4 * 1024 * 1024), true, None)
+        .unwrap();
+    let res_4m = service.execute_acquisition("op-invar-4m", &plan_4m, None).unwrap();
+
+    // Invariance: All 3 acquisitions of identical source MUST yield bit-for-bit identical hashes
+    assert_eq!(res_512k.image_sha256, res_1m.image_sha256);
+    assert_eq!(res_1m.image_sha256, res_4m.image_sha256);
+    assert_eq!(res_512k.bytes_acquired, capacity);
+    assert_eq!(res_1m.bytes_acquired, capacity);
+    assert_eq!(res_4m.bytes_acquired, capacity);
+
+    // Diagnostics verified: performance stats tracked and populated
+    let diag = res_4m.diagnostics.expect("Missing diagnostics");
+    let stats = diag.performance_stats.expect("Missing performance stats");
+    assert_eq!(stats.chunk_size_bytes, 4 * 1024 * 1024);
+    assert!(stats.chunks_processed >= 1);
+    assert_eq!(stats.read_errors_encountered, 0);
+    assert_eq!(stats.write_errors_encountered, 0);
+    assert!(stats.effective_throughput_mbps > 0.0);
 }

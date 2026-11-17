@@ -29,6 +29,18 @@ export interface AcquisitionPlan {
   created_at: string;
 }
 
+export interface AcquisitionPerformanceStats {
+  chunk_size_bytes: number;
+  chunks_processed: number;
+  read_duration_ms: number;
+  hash_duration_ms: number;
+  write_duration_ms: number;
+  total_duration_ms: number;
+  effective_throughput_mbps: number;
+  read_errors_encountered: number;
+  write_errors_encountered: number;
+}
+
 export interface AcquisitionProgress {
   operation_id: string;
   bytes_acquired: number;
@@ -38,6 +50,7 @@ export interface AcquisitionProgress {
   elapsed_seconds: number;
   eta_seconds?: number | null;
   stage: string;
+  performance_stats?: AcquisitionPerformanceStats | null;
 }
 
 export type AcquisitionStatus =
@@ -59,6 +72,7 @@ export interface AcquisitionDiagnostics {
   underlying_error?: string | null;
   win32_error_code?: number | null;
   final_status: string;
+  performance_stats?: AcquisitionPerformanceStats | null;
 }
 
 export interface AcquisitionPrivilegeStatus {
@@ -109,6 +123,7 @@ export interface AcquisitionResult {
   average_throughput_mbps: number;
   failure_reason?: AcquisitionFailureReason | null;
   diagnostics?: AcquisitionDiagnostics | null;
+  performance_stats?: AcquisitionPerformanceStats | null;
   cleanup_status?: ArtifactCleanupStatus | null;
   cleanup_error?: string | null;
   leftover_artifact_path?: string | null;

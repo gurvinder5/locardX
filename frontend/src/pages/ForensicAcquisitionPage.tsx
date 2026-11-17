@@ -548,10 +548,12 @@ export const ForensicAcquisitionPage: React.FC = () => {
                   onChange={(e) => setChunkSizeBytes(Number(e.target.value))}
                   isDisabled={isAcquiring}
                 >
-                  <SelectItem key={String(64 * 1024)}>64 KiB</SelectItem>
                   <SelectItem key={String(512 * 1024)}>512 KiB</SelectItem>
-                  <SelectItem key={String(1024 * 1024)}>1 MiB (Recommended)</SelectItem>
-                  <SelectItem key={String(4 * 1024 * 1024)}>4 MiB (Fast SSD)</SelectItem>
+                  <SelectItem key={String(1024 * 1024)}>1 MiB (Standard Default)</SelectItem>
+                  <SelectItem key={String(4 * 1024 * 1024)}>4 MiB (Fastest — 411 MB/s)</SelectItem>
+                  <SelectItem key={String(8 * 1024 * 1024)}>8 MiB (High Throughput)</SelectItem>
+                  <SelectItem key={String(16 * 1024 * 1024)}>16 MiB</SelectItem>
+                  <SelectItem key={String(32 * 1024 * 1024)}>32 MiB</SelectItem>
                 </Select>
 
                 <div className="flex items-center pt-5">
@@ -631,6 +633,12 @@ export const ForensicAcquisitionPage: React.FC = () => {
                   <span className="text-slate-500 dark:text-slate-400">Destination File:</span>
                   <span className="font-mono text-slate-700 dark:text-slate-300 truncate max-w-[280px]" title={plan.destination_path}>
                     {plan.destination_path}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-50 dark:border-[#1E2732]">
+                  <span className="text-slate-500 dark:text-slate-400">Validated Buffer Size:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    {formatBytes(plan.chunk_size_bytes)} ({plan.chunk_size_bytes.toLocaleString()} bytes)
                   </span>
                 </div>
                 <div className="flex justify-between py-1">
@@ -714,6 +722,15 @@ export const ForensicAcquisitionPage: React.FC = () => {
                 <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 text-center">
                   Acquired {formatBytes(progress.bytes_acquired)} of {formatBytes(progress.total_bytes)}
                 </div>
+
+                {progress.performance_stats && (
+                  <div className="bg-slate-50 dark:bg-[#10161D] p-2.5 rounded border border-slate-100 dark:border-[#26313D] text-[11px] font-mono grid grid-cols-2 gap-2 text-slate-600 dark:text-slate-300">
+                    <div>Buffer: <span className="font-semibold text-slate-900 dark:text-white">{formatBytes(progress.performance_stats.chunk_size_bytes)}</span></div>
+                    <div>Chunks: <span className="font-semibold text-slate-900 dark:text-white">{progress.performance_stats.chunks_processed}</span></div>
+                    <div>Read I/O: <span className="font-semibold text-slate-900 dark:text-white">{progress.performance_stats.read_duration_ms} ms</span></div>
+                    <div>SHA-256: <span className="font-semibold text-slate-900 dark:text-white">{progress.performance_stats.hash_duration_ms} ms</span></div>
+                  </div>
+                )}
 
                 <div className="pt-2">
                   <Button
@@ -832,6 +849,47 @@ export const ForensicAcquisitionPage: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* Acquisition Performance Diagnostics */}
+                {(result.performance_stats || result.diagnostics?.performance_stats) && (
+                  <div className="bg-slate-50 dark:bg-[#10161D] border border-slate-200 dark:border-[#26313D] rounded-lg p-3 space-y-2">
+                    <div className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 tracking-wider">
+                      Acquisition Performance Diagnostics
+                    </div>
+                    {(() => {
+                      const stats = result.performance_stats || result.diagnostics?.performance_stats;
+                      if (!stats) return null;
+                      return (
+                        <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">Chunk Buffer:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{formatBytes(stats.chunk_size_bytes)}</span>
+                          </div>
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">Chunks Processed:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.chunks_processed}</span>
+                          </div>
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">Source Read Time:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.read_duration_ms} ms</span>
+                          </div>
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">SHA-256 Hash Time:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.hash_duration_ms} ms</span>
+                          </div>
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">Destination Write Time:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.write_duration_ms} ms</span>
+                          </div>
+                          <div className="flex justify-between p-1.5 bg-white dark:bg-[#151C24] rounded border border-slate-100 dark:border-[#26313D]">
+                            <span className="text-slate-500">Effective Rate:</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">{stats.effective_throughput_mbps} MB/s</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {/* Artifact Verification Section */}
                 <div className="pt-2 border-t border-slate-100 dark:border-[#26313D] space-y-2">

@@ -1,16 +1,18 @@
 use crate::models::{AcquisitionFailureReason, ArtifactCleanupStatus};
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Sequential raw / DD bitstream forensic image writer.
 ///
-/// Bytes are written to a staging artifact (`<final>.partial`) and only promoted
-/// to the final image path after a successful flush, close, and integrity check.
+/// Bytes are written sequentially to a staging artifact (`<final>.partial`)
+/// using direct unbuffered file I/O to avoid redundant double-buffering when writing
+/// large chunk buffers (512 KiB - 32 MiB). The artifact is only promoted to the final image
+/// path after a successful flush, sync_all, and cryptographic integrity check.
 pub struct RawImageWriter {
     final_path: PathBuf,
     staging_path: PathBuf,
-    writer: Option<BufWriter<File>>,
+    file: Option<File>,
     bytes_written: u64,
     write_fail_after: Option<u64>,
 }
@@ -95,13 +97,10 @@ impl RawImageWriter {
                 ))
             })?;
 
-        // 1 MiB write buffer for high-throughput sequential writing
-        let writer = BufWriter::with_capacity(1024 * 1024, file);
-
         Ok(Self {
             final_path,
             staging_path,
-            writer: Some(writer),
+            file: Some(file),
             bytes_written: 0,
             write_fail_after,
         })
@@ -118,11 +117,11 @@ impl RawImageWriter {
             }
         }
 
-        let writer = self.writer.as_mut().ok_or_else(|| {
+        let file = self.file.as_mut().ok_or_else(|| {
             AcquisitionFailureReason::WriteError("Image writer is closed".to_string())
         })?;
 
-        writer.write_all(chunk).map_err(|e| {
+        file.write_all(chunk).map_err(|e| {
             AcquisitionFailureReason::WriteError(format!(
                 "Failed writing {} bytes at offset {} in destination image: {}",
                 chunk.len(),
@@ -137,24 +136,13 @@ impl RawImageWriter {
 
     /// Flushes all user-space buffers and syncs file contents and metadata to disk, then closes the handle.
     pub fn flush_and_sync(&mut self) -> Result<u64, AcquisitionFailureReason> {
-        let mut writer = self.writer.take().ok_or_else(|| {
+        let file = self.file.take().ok_or_else(|| {
             AcquisitionFailureReason::WriteError("Image writer is already closed".to_string())
-        })?;
-
-        writer.flush().map_err(|e| {
-            AcquisitionFailureReason::WriteError(format!(
-                "Failed to flush destination image: {}",
-                e
-            ))
-        })?;
-
-        let file = writer.into_inner().map_err(|e| {
-            AcquisitionFailureReason::WriteError(format!("Buffer flush failure: {}", e))
         })?;
 
         file.sync_all().map_err(|e| {
             AcquisitionFailureReason::WriteError(format!(
-                "Failed to sync_all destination image to disk: {}",
+                "Failed to sync destination image to disk: {}",
                 e
             ))
         })?;
@@ -165,7 +153,7 @@ impl RawImageWriter {
 
     /// Promotes the staging artifact to the final image path. The writer handle must already be closed.
     pub fn finalize_to_destination(self) -> Result<(u64, PathBuf), AcquisitionFailureReason> {
-        if self.writer.is_some() {
+        if self.file.is_some() {
             return Err(AcquisitionFailureReason::WriteError(
                 "Cannot finalize destination while the image writer is still open".to_string(),
             ));
@@ -222,17 +210,9 @@ impl RawImageWriter {
     }
 
     fn close_output(&mut self) {
-        if let Some(mut writer) = self.writer.take() {
-            let _ = writer.flush();
-            match writer.into_inner() {
-                Ok(file) => {
-                    let _ = file.sync_all();
-                    drop(file);
-                }
-                Err(err) => {
-                    drop(err.into_inner());
-                }
-            }
+        if let Some(file) = self.file.take() {
+            let _ = file.sync_all();
+            drop(file);
         }
     }
 

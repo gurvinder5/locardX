@@ -1,9 +1,14 @@
 use crate::hasher::StreamingSha256Hasher;
-use crate::models::{AcquisitionFailureReason, AcquisitionProgress, ArtifactCleanupStatus};
+use crate::models::{
+    AcquisitionFailureReason, AcquisitionPerformanceStats, AcquisitionProgress,
+    ArtifactCleanupStatus,
+};
 use crate::platform::ReadOnlyDeviceStream;
 use crate::writer::{staging_path_for, ArtifactCleanupResult, RawImageWriter};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::thread;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 /// Output of a successfully executed acquisition stream pass.
@@ -14,6 +19,7 @@ pub struct AcquisitionEngineOutput {
     pub image_sha256: String,
     pub bytes_acquired: u64,
     pub elapsed_seconds: f64,
+    pub diagnostics: AcquisitionPerformanceStats,
 }
 
 /// Failed engine execution with a filesystem-verified cleanup outcome.
@@ -63,10 +69,38 @@ pub struct AcquisitionEngineOptions {
     pub force_integrity_mismatch: bool,
 }
 
+enum PipelineCommand {
+    Write { buffer: Vec<u8>, valid_len: usize },
+    Abort(AcquisitionFailureReason),
+    Complete,
+}
+
 /// The core read-only streaming acquisition engine.
 pub struct AcquisitionEngine;
 
 impl AcquisitionEngine {
+    /// Alias for `execute` satisfying the `AcquisitionEngine::acquire` interface.
+    #[allow(clippy::result_large_err)]
+    pub fn acquire(
+        operation_id: &str,
+        stream: Box<dyn ReadOnlyDeviceStream>,
+        destination_path: &Path,
+        chunk_size_bytes: usize,
+        expected_total_bytes: u64,
+        is_cancelled: Option<&(dyn Fn() -> bool + Send + Sync)>,
+        on_progress: Option<&(dyn Fn(AcquisitionProgress) + Send + Sync)>,
+    ) -> Result<AcquisitionEngineOutput, AcquisitionEngineError> {
+        Self::execute(
+            operation_id,
+            stream,
+            destination_path,
+            chunk_size_bytes,
+            expected_total_bytes,
+            is_cancelled,
+            on_progress,
+        )
+    }
+
     /// Executes a bitstream raw/dd acquisition from `stream` to `destination_path`.
     /// Simultaneously computes the streaming SHA-256 hash and emits progress telemetry.
     #[allow(clippy::result_large_err)]
@@ -141,17 +175,71 @@ impl AcquisitionEngine {
 
         let mut hasher = StreamingSha256Hasher::new();
 
-        // Allocate 4096-byte aligned buffer to satisfy direct hardware I/O DMA requirements
-        let mut raw_buffer = vec![0u8; chunk_size + 4096];
-        let align_offset = {
-            let addr = raw_buffer.as_ptr() as usize;
-            (4096 - (addr % 4096)) % 4096
-        };
+        // High-throughput Bounded Producer-Consumer Double Buffering Pipeline:
+        // Pre-allocate 2 reusable buffers sized to `chunk_size` upfront.
+        // Zero allocations inside the acquisition loop.
+        let (free_tx, free_rx): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(2);
+        let (work_tx, work_rx): (SyncSender<PipelineCommand>, Receiver<PipelineCommand>) =
+            sync_channel(2);
+        let (writer_err_tx, writer_err_rx): (
+            SyncSender<(AcquisitionFailureReason, ArtifactCleanupResult)>,
+            Receiver<(AcquisitionFailureReason, ArtifactCleanupResult)>,
+        ) = sync_channel(1);
+
+        free_tx.send(vec![0u8; chunk_size]).unwrap();
+        free_tx.send(vec![0u8; chunk_size]).unwrap();
+
+        let writer_free_tx = free_tx.clone();
+        let writer_handle = thread::spawn(move || {
+            let mut write_duration = Duration::ZERO;
+            let mut write_errors = 0u32;
+
+            while let Ok(cmd) = work_rx.recv() {
+                match cmd {
+                    PipelineCommand::Write { buffer, valid_len } => {
+                        let w_start = Instant::now();
+                        match writer.write_chunk(&buffer[..valid_len]) {
+                            Ok(()) => {
+                                write_duration += w_start.elapsed();
+                                let _ = writer_free_tx.send(buffer);
+                            }
+                            Err(e) => {
+                                write_duration += w_start.elapsed();
+                                write_errors += 1;
+                                let cleanup = writer.abort_and_cleanup();
+                                let _ = writer_err_tx.send((e.clone(), cleanup.clone()));
+                                return Err((e, cleanup, write_duration, write_errors));
+                            }
+                        }
+                    }
+                    PipelineCommand::Abort(reason) => {
+                        let cleanup = writer.abort_and_cleanup();
+                        return Err((reason, cleanup, write_duration, write_errors));
+                    }
+                    PipelineCommand::Complete => break,
+                }
+            }
+
+            let flush_start = Instant::now();
+            let final_size = match writer.flush_and_sync() {
+                Ok(s) => s,
+                Err(e) => {
+                    let cleanup = writer.abort_and_cleanup();
+                    return Err((e, cleanup, write_duration, write_errors));
+                }
+            };
+            write_duration += flush_start.elapsed();
+
+            Ok((writer, final_size, write_duration, write_errors))
+        });
 
         let start_time = Instant::now();
         let mut last_progress_time = Instant::now();
         let mut total_bytes_acquired: u64 = 0;
-        let mut chunk_index: u64 = 0;
+        let mut chunks_processed: u64 = 0;
+        let mut read_duration = Duration::ZERO;
+        let mut hash_duration = Duration::ZERO;
+        let read_errors = 0u32;
 
         loop {
             // 1. Cooperative cancellation check
@@ -162,7 +250,11 @@ impl AcquisitionEngine {
                         total_bytes_acquired,
                         "[CLEANUP] Acquisition cancelled by operator. Attempting incomplete artifact removal."
                     );
-                    let cleanup = writer.abort_and_cleanup();
+                    let _ = work_tx.send(PipelineCommand::Abort(AcquisitionFailureReason::Cancelled));
+                    let cleanup = match writer_handle.join() {
+                        Ok(Err((_, cleanup, _, _))) => cleanup,
+                        _ => ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
+                    };
                     log_cleanup(operation_id, &cleanup);
                     return Err(AcquisitionEngineError::from_cleanup(
                         AcquisitionFailureReason::Cancelled,
@@ -171,26 +263,63 @@ impl AcquisitionEngine {
                 }
             }
 
-            let current_offset = total_bytes_acquired;
-            let aligned_slice = &mut raw_buffer[align_offset..align_offset + chunk_size];
+            // 2. Check if writer thread reported an early failure
+            if let Ok((err, cleanup)) = writer_err_rx.try_recv() {
+                let _ = writer_handle.join();
+                log_cleanup(operation_id, &cleanup);
+                return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
+            }
 
-            // 2. Sequential read from source physical stream
-            let read_bytes = match stream.read_chunk(aligned_slice) {
-                Ok(n) => n,
+            // 3. Acquire reusable buffer from free pool (bounded backpressure)
+            let mut buffer = match free_rx.recv() {
+                Ok(buf) => buf,
+                Err(_) => {
+                    // Writer thread exited prematurely
+                    let (err, cleanup, _, _) = match writer_handle.join() {
+                        Ok(Err(res)) => res,
+                        _ => (
+                            AcquisitionFailureReason::WriteError(
+                                "Writer pipeline unexpectedly terminated".to_string(),
+                            ),
+                            ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
+                            Duration::ZERO,
+                            0,
+                        ),
+                    };
+                    log_cleanup(operation_id, &cleanup);
+                    return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
+                }
+            };
+
+            let current_offset = total_bytes_acquired;
+
+            // 4. Sequential read from source physical stream
+            let r_start = Instant::now();
+            let read_bytes = match stream.read_chunk(&mut buffer[..chunk_size]) {
+                Ok(n) => {
+                    read_duration += r_start.elapsed();
+                    n
+                }
                 Err(e) => {
+                    read_duration += r_start.elapsed();
+                    let _ = read_errors;
                     error!(
                         operation_id,
                         offset = current_offset,
                         error = %e,
                         "[READ_ERROR] Read failure from physical source stream"
                     );
-                    let cleanup = writer.abort_and_cleanup();
+                    let _ = work_tx.send(PipelineCommand::Abort(e.clone()));
+                    let cleanup = match writer_handle.join() {
+                        Ok(Err((_, cleanup, _, _))) => cleanup,
+                        _ => ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
+                    };
                     log_cleanup(operation_id, &cleanup);
                     return Err(AcquisitionEngineError::from_cleanup(e, cleanup));
                 }
             };
 
-            // 3. Handle EOF
+            // 5. Handle EOF
             if read_bytes == 0 {
                 // If expected size was non-zero and we read less than expected, treat as short read
                 if expected_total_bytes > 0 && total_bytes_acquired < expected_total_bytes {
@@ -200,45 +329,56 @@ impl AcquisitionEngine {
                         actual = total_bytes_acquired,
                         "[READ_ERROR] Unexpected EOF: Short read detected"
                     );
-                    let cleanup = writer.abort_and_cleanup();
+                    let err = AcquisitionFailureReason::ShortRead {
+                        expected: expected_total_bytes,
+                        actual: total_bytes_acquired,
+                    };
+                    let _ = work_tx.send(PipelineCommand::Abort(err.clone()));
+                    let cleanup = match writer_handle.join() {
+                        Ok(Err((_, cleanup, _, _))) => cleanup,
+                        _ => ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
+                    };
                     log_cleanup(operation_id, &cleanup);
-                    return Err(AcquisitionEngineError::from_cleanup(
-                        AcquisitionFailureReason::ShortRead {
-                            expected: expected_total_bytes,
-                            actual: total_bytes_acquired,
-                        },
-                        cleanup,
-                    ));
+                    return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
                 }
+
+                // Normal EOF reached
+                let _ = work_tx.send(PipelineCommand::Complete);
                 break;
             }
 
-            let chunk = &aligned_slice[..read_bytes];
+            // 6. Update streaming SHA-256 with exact bytes read (strictly in-order)
+            let h_start = Instant::now();
+            hasher.update(&buffer[..read_bytes]);
+            hash_duration += h_start.elapsed();
 
-            // 4. Update streaming SHA-256 with exact bytes read
-            hasher.update(chunk);
+            // 7. Enqueue buffer to writer thread via bounded channel
+            total_bytes_acquired += read_bytes as u64;
+            chunks_processed += 1;
 
-            // 5. Write chunk to destination image
-            if let Err(e) = writer.write_chunk(chunk) {
-                error!(
-                    operation_id,
-                    offset = current_offset,
-                    bytes = read_bytes,
-                    error = %e,
-                    "[IMAGE_WRITE_FAILED] Write failure to target evidence file"
-                );
-                let cleanup = writer.abort_and_cleanup();
+            if let Err(_) = work_tx.send(PipelineCommand::Write {
+                buffer,
+                valid_len: read_bytes,
+            }) {
+                let (err, cleanup, _, _) = match writer_handle.join() {
+                    Ok(Err(res)) => res,
+                    _ => (
+                        AcquisitionFailureReason::WriteError(
+                            "Writer thread closed pipeline channel".to_string(),
+                        ),
+                        ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
+                        Duration::ZERO,
+                        0,
+                    ),
+                };
                 log_cleanup(operation_id, &cleanup);
-                return Err(AcquisitionEngineError::from_cleanup(e, cleanup));
+                return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
             }
 
-            total_bytes_acquired += read_bytes as u64;
-            chunk_index += 1;
-
-            if chunk_index <= 3 || chunk_index.is_multiple_of(100) {
+            if chunks_processed <= 3 || chunks_processed.is_multiple_of(100) {
                 info!(
                     operation_id,
-                    chunk_index,
+                    chunks_processed,
                     offset = current_offset,
                     bytes_read = read_bytes,
                     total_bytes_acquired,
@@ -246,36 +386,60 @@ impl AcquisitionEngine {
                 );
             }
 
-            // 6. Telemetry: byte-accurate progress. Never report 100% before flush + integrity + finalize.
+            // 8. Telemetry: byte-accurate progress with performance stats
             let now = Instant::now();
-            if chunk_index == 1
+            if chunks_processed == 1
                 || now.duration_since(last_progress_time).as_millis() >= 100
                 || (expected_total_bytes > 0 && total_bytes_acquired >= expected_total_bytes)
             {
                 last_progress_time = now;
+                let current_stats = AcquisitionPerformanceStats {
+                    chunk_size_bytes: chunk_size,
+                    chunks_processed,
+                    read_duration_ms: read_duration.as_millis() as u64,
+                    hash_duration_ms: hash_duration.as_millis() as u64,
+                    write_duration_ms: 0,
+                    total_duration_ms: start_time.elapsed().as_millis() as u64,
+                    effective_throughput_mbps: if start_time.elapsed().as_secs_f64() > 0.0 {
+                        (total_bytes_acquired as f64 / (1024.0 * 1024.0))
+                            / start_time.elapsed().as_secs_f64()
+                    } else {
+                        0.0
+                    },
+                    read_errors_encountered: read_errors,
+                    write_errors_encountered: 0,
+                };
+
                 emit_progress(
                     operation_id,
                     total_bytes_acquired,
                     expected_total_bytes,
                     start_time,
                     false,
+                    Some(current_stats),
                     on_progress,
                 );
             }
         }
 
-        // 7. Flush and sync image writer (closes the staging file handle)
-        let final_size = match writer.flush_and_sync() {
-            Ok(s) => s,
-            Err(e) => {
-                error!(operation_id, error = %e, "[CLEANUP] Flush failure, aborting");
-                let cleanup = writer.abort_and_cleanup();
+        // 9. Join writer thread and retrieve results
+        let (writer, final_size, write_duration, write_errors) = match writer_handle.join() {
+            Ok(Ok(res)) => res,
+            Ok(Err((err, cleanup, _, _))) => {
                 log_cleanup(operation_id, &cleanup);
-                return Err(AcquisitionEngineError::from_cleanup(e, cleanup));
+                return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
+            }
+            Err(_) => {
+                let cleanup = crate::writer::delete_artifact_verified(&staging_path_for(destination_path));
+                log_cleanup(operation_id, &cleanup);
+                return Err(AcquisitionEngineError::from_cleanup(
+                    AcquisitionFailureReason::WriteError("Writer thread panicked".to_string()),
+                    cleanup,
+                ));
             }
         };
 
-        // 8. Finalize streaming SHA-256
+        // 10. Finalize streaming SHA-256
         let (image_sha256, hash_bytes) = hasher.finalize();
         let elapsed_seconds = start_time.elapsed().as_secs_f64();
 
@@ -296,11 +460,15 @@ impl AcquisitionEngine {
             return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
         }
 
-        // 9. Promote staging artifact to the final image name only after verification.
+        // 11. Promote staging artifact to final image name only after verified integrity
         let (promoted_size, promoted_path) = match writer.finalize_to_destination() {
             Ok(v) => v,
             Err(e) => {
-                error!(operation_id, error = %e, "[FINALIZE_FAILED] Staging image could not be promoted");
+                error!(
+                    operation_id,
+                    error = %e,
+                    "[FINALIZE_FAILED] Staging image could not be promoted"
+                );
                 let leftover = staging_path_for(destination_path);
                 let leftover_exists = leftover.exists();
                 return Err(AcquisitionEngineError {
@@ -320,11 +488,31 @@ impl AcquisitionEngine {
             }
         };
 
+        let total_duration_ms = start_time.elapsed().as_millis() as u64;
+        let avg_throughput = if elapsed_seconds > 0.0 {
+            (total_bytes_acquired as f64 / (1024.0 * 1024.0)) / elapsed_seconds
+        } else {
+            0.0
+        };
+
+        let perf_stats = AcquisitionPerformanceStats {
+            chunk_size_bytes: chunk_size,
+            chunks_processed,
+            read_duration_ms: read_duration.as_millis() as u64,
+            hash_duration_ms: hash_duration.as_millis() as u64,
+            write_duration_ms: write_duration.as_millis() as u64,
+            total_duration_ms,
+            effective_throughput_mbps: (avg_throughput * 10.0).round() / 10.0,
+            read_errors_encountered: read_errors,
+            write_errors_encountered: write_errors,
+        };
+
         info!(
             operation_id,
             final_size = promoted_size,
             sha256 = %image_sha256,
             elapsed_seconds,
+            effective_throughput = perf_stats.effective_throughput_mbps,
             "[ACQUISITION_COMPLETE] Bitstream acquisition successfully completed and verified"
         );
 
@@ -334,6 +522,7 @@ impl AcquisitionEngine {
             total_bytes_acquired,
             start_time,
             true,
+            Some(perf_stats.clone()),
             on_progress,
         );
 
@@ -343,6 +532,7 @@ impl AcquisitionEngine {
             image_sha256,
             bytes_acquired: total_bytes_acquired,
             elapsed_seconds,
+            diagnostics: perf_stats,
         })
     }
 }
@@ -374,6 +564,7 @@ fn emit_progress(
     total_bytes: u64,
     start_time: Instant,
     completed: bool,
+    perf_stats: Option<AcquisitionPerformanceStats>,
     on_progress: Option<&(dyn Fn(AcquisitionProgress) + Send + Sync)>,
 ) {
     let Some(cb) = on_progress else {
@@ -420,5 +611,6 @@ fn emit_progress(
         elapsed_seconds: (elapsed_secs * 10.0).round() / 10.0,
         eta_seconds: eta_seconds.map(|e| (e * 10.0).round() / 10.0),
         stage,
+        performance_stats: perf_stats,
     });
 }
