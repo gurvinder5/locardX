@@ -9,9 +9,18 @@ import {
   Sliders,
   FileCheck,
   AlertCircle,
-  Loader2,
   Briefcase,
 } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Checkbox,
+  RadioGroup,
+  Radio,
+  Slider,
+  Chip,
+  Divider,
+} from '@heroui/react';
 import { useRecoveryStore } from '../../stores/recoveryStore';
 import { RecoveryMode, RecoveryOptions, RecoverySourceSnapshot } from '../../types/recovery';
 import { RecoverySourceSelector } from './RecoverySourceSelector';
@@ -99,7 +108,6 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
 
   const handleSelectSource = (src: RecoverySourceSnapshot) => {
     setSelectedSourceSnapshot(src);
-    // Create an AcquisitionArtifact wrapper for validation and planning
     const artifact = {
       acquisition_id: src.acquisition_id,
       image_path: src.image_path,
@@ -188,87 +196,74 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
     <div className="space-y-6">
       {/* Active Case Warning Banner if not active */}
       {!isCaseActive && (
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="border-l-2 border-amber-500 bg-amber-500/10 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
-              <Briefcase className="w-5 h-5" />
-            </div>
+            <Briefcase className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <div>
-              <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+              <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider">
                 Active Investigation Case Required
               </h4>
-              <p className="text-xs text-amber-800">
+              <p className="text-xs text-amber-800 dark:text-amber-300">
                 Forensic file recovery and evidential carving must be bound to an open investigation case to record evidentiary chain of custody.
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setShowCaseModal(true)}
-            className="px-3.5 py-2 text-xs font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 border border-amber-300 rounded-lg shadow-xs transition-colors shrink-0"
+          <Button
+            size="sm"
+            onPress={() => setShowCaseModal(true)}
+            className="px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-100 bg-amber-200 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-900/80 border border-amber-400 dark:border-amber-700 rounded-sm shrink-0"
           >
             Select or Create Case
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Stepper Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+      <div className="flex items-center justify-between border-b border-slate-200 dark:border-workstation-border pb-3">
         <div className="flex items-center space-x-6 text-xs">
-          <span
-            className={`font-semibold flex items-center gap-1.5 ${
-              currentStep === 1 ? 'text-indigo-600' : 'text-slate-500'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]">
-              1
+          {[
+            { step: 1, label: 'Source Image' },
+            { step: 2, label: 'Carving Options' },
+            { step: 3, label: 'Pre-Flight Review' },
+            { step: 4, label: 'Execution & Results' },
+          ].map((item) => (
+            <span
+              key={item.step}
+              className={`font-semibold flex items-center gap-1.5 ${
+                currentStep === item.step
+                  ? 'text-slate-900 dark:text-slate-100 font-bold'
+                  : 'text-slate-400 dark:text-slate-500'
+              }`}
+            >
+              <span
+                className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${
+                  currentStep === item.step
+                    ? 'border-slate-900 dark:border-slate-100 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+                    : 'border-slate-300 dark:border-slate-700'
+                }`}
+              >
+                {item.step}
+              </span>
+              {item.label}
             </span>
-            Source Image
-          </span>
-          <span
-            className={`font-semibold flex items-center gap-1.5 ${
-              currentStep === 2 ? 'text-indigo-600' : 'text-slate-500'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]">
-              2
-            </span>
-            Carving Options
-          </span>
-          <span
-            className={`font-semibold flex items-center gap-1.5 ${
-              currentStep === 3 ? 'text-indigo-600' : 'text-slate-500'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]">
-              3
-            </span>
-            Pre-Flight Review
-          </span>
-          <span
-            className={`font-semibold flex items-center gap-1.5 ${
-              currentStep === 4 ? 'text-indigo-600' : 'text-slate-500'
-            }`}
-          >
-            <span className="w-5 h-5 rounded-full border flex items-center justify-center text-[10px]">
-              4
-            </span>
-            Execution & Results
-          </span>
+          ))}
         </div>
 
         {currentStep > 1 && !isScanning && (
-          <button
-            onClick={handleReset}
-            className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1"
+          <Button
+            size="sm"
+            variant="light"
+            onPress={handleReset}
+            startContent={<RotateCcw className="w-3.5 h-3.5" />}
+            className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
             Reset
-          </button>
+          </Button>
         )}
       </div>
 
       {error && (
-        <div className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-700 flex items-center gap-2">
+        <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-md text-xs text-rose-700 dark:text-rose-400 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span>{error}</span>
         </div>
@@ -287,14 +282,14 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
           />
 
           <div className="flex justify-end pt-2">
-            <button
-              onClick={() => setCurrentStep(2)}
-              disabled={!selectedArtifact}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded flex items-center gap-1.5 transition-colors disabled:opacity-40"
+            <Button
+              onPress={() => setCurrentStep(2)}
+              isDisabled={!selectedArtifact}
+              endContent={<ArrowRight className="w-4 h-4" />}
+              className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold text-xs px-4"
             >
               Continue to Options
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -302,173 +297,187 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
       {/* Step 2: Configure Options */}
       {currentStep === 2 && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Left Column: Mode & Output */}
-            <div className="space-y-4 bg-white border border-slate-200 p-4 rounded-md shadow-2xs">
-              <h4 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                <Sliders className="w-4 h-4 text-indigo-600" />
-                Recovery Strategy & Modes
-              </h4>
+            <div className="border border-slate-200 dark:border-[#26313D] p-4 rounded-xs bg-white dark:bg-[#151C24] space-y-4">
+              <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sliders className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                  Recovery Strategy & Modes
+                </h4>
 
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-700">Recovery Mode</label>
-                <div className="space-y-1.5">
-                  {[
-                    { key: 'all', title: 'All (Filesystem Metadata + Sliding-Window Carving)' },
-                    { key: 'filesystem_only', title: 'Filesystem Metadata Only (NTFS MFT, FAT32 deleted entries)' },
-                    { key: 'carving_only', title: 'Raw Bitstream Carving Only (Structure & Signature search)' },
-                  ].map((m) => (
-                    <label
-                      key={m.key}
-                      className={`flex items-start gap-2.5 p-2.5 border rounded cursor-pointer text-xs ${
-                        recoveryMode === m.key
-                          ? 'border-indigo-600 bg-indigo-50/40 text-indigo-900 font-medium'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="rec_mode"
-                        checked={recoveryMode === m.key}
-                        onChange={() => setRecoveryMode(m.key as RecoveryMode)}
-                        className="mt-0.5 text-indigo-600"
-                      />
-                      <span>{m.title}</span>
-                    </label>
-                  ))}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Recovery Mode</label>
+                  <RadioGroup
+                    value={recoveryMode}
+                    onValueChange={(val) => setRecoveryMode(val as RecoveryMode)}
+                    classNames={{
+                      wrapper: 'space-y-2',
+                    }}
+                  >
+                    {[
+                      { key: 'all', title: 'All (Filesystem Metadata + Sliding-Window Carving)' },
+                      { key: 'filesystem_only', title: 'Filesystem Metadata Only (NTFS MFT, FAT32 deleted entries)' },
+                      { key: 'carving_only', title: 'Raw Bitstream Carving Only (Structure & Signature search)' },
+                    ].map((m) => (
+                      <Radio
+                        key={m.key}
+                        value={m.key}
+                        classNames={{
+                          base: `p-2.5 rounded-lg border w-full max-w-full m-0 cursor-pointer transition-all ${
+                            recoveryMode === m.key
+                              ? 'border-slate-900 dark:border-slate-400 bg-slate-50 dark:bg-workstation-surface'
+                              : 'border-slate-200 dark:border-workstation-border hover:bg-slate-50 dark:hover:bg-workstation-surface/50'
+                          }`,
+                          label: 'text-xs text-slate-800 dark:text-slate-200',
+                        }}
+                      >
+                        {m.title}
+                      </Radio>
+                    ))}
+                  </RadioGroup>
                 </div>
-              </div>
 
-              <div className="space-y-1 pt-2 border-t border-slate-100">
-                <label className="block text-xs font-medium text-slate-700">Output Export Directory</label>
-                <input
-                  type="text"
-                  value={outputDir}
-                  onChange={(e) => setOutputDir(e.target.value)}
-                  placeholder="C:\RecoveredFiles"
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded font-mono bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-                <p className="text-[10px] text-slate-400">
-                  Recovered files will be written here strictly isolated from the source image.
-                </p>
-              </div>
+                <Divider />
 
-              <div className="space-y-1 pt-2 border-t border-slate-100">
-                <div className="flex justify-between text-xs font-medium text-slate-700">
-                  <span>Minimum Confidence Score Threshold</span>
-                  <span className="font-mono font-bold text-indigo-600">{minConfidence}%</span>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Output Export Directory</label>
+                  <Input
+                    size="sm"
+                    value={outputDir}
+                    onValueChange={setOutputDir}
+                    placeholder="C:\RecoveredFiles"
+                    className="font-mono text-xs"
+                    classNames={{
+                      inputWrapper: 'bg-white dark:bg-workstation-panel border border-slate-300 dark:border-workstation-border',
+                    }}
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    Recovered files will be written here strictly isolated from the source image.
+                  </p>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={95}
-                  step={5}
-                  value={minConfidence}
-                  onChange={(e) => setMinConfidence(parseInt(e.target.value, 10))}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>Permissive (0%)</span>
-                  <span>Standard (40%)</span>
-                  <span>Strict High Only (85%)</span>
+
+                <Divider />
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <span>Minimum Confidence Score Threshold</span>
+                    <Chip size="sm" variant="flat" className="font-mono font-bold bg-slate-100 dark:bg-workstation-surface text-slate-900 dark:text-slate-100">
+                      {minConfidence}%
+                    </Chip>
+                  </div>
+                  <Slider
+                    size="sm"
+                    step={5}
+                    maxValue={95}
+                    minValue={0}
+                    value={minConfidence}
+                    onChange={(val) => setMinConfidence(Number(val))}
+                    aria-label="Minimum confidence score"
+                    classNames={{
+                      filler: 'bg-slate-900 dark:bg-slate-100',
+                      thumb: 'bg-slate-900 dark:bg-slate-100',
+                    }}
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>Permissive (0%)</span>
+                    <span>Standard (40%)</span>
+                    <span>Strict High Only (85%)</span>
+                  </div>
                 </div>
-              </div>
             </div>
 
             {/* Right Column: File Types */}
-            <div className="space-y-4 bg-white border border-slate-200 p-4 rounded-md shadow-2xs">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                  <FileCheck className="w-4 h-4 text-indigo-600" />
-                  Target File Types ({selectedTypes.length}/{fileTypeOptions.length})
-                </h4>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTypes(fileTypeOptions.map((o) => o.id))}
-                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
-                  >
-                    Select All
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTypes([])}
-                    className="text-[10px] text-slate-500 hover:text-slate-700 cursor-pointer"
-                  >
-                    Clear
-                  </button>
+            <div className="border border-slate-200 dark:border-[#26313D] p-4 rounded-xs bg-white dark:bg-[#151C24] space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 uppercase tracking-wider">
+                    <FileCheck className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                    Target File Types ({selectedTypes.length}/{fileTypeOptions.length})
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() => setSelectedTypes(fileTypeOptions.map((o) => o.id))}
+                      className="text-[10px] text-slate-700 dark:text-slate-300 font-medium h-6 px-2"
+                    >
+                      Select All
+                    </Button>
+                    <span className="text-slate-300 dark:text-slate-600">|</span>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() => setSelectedTypes([])}
+                      className="text-[10px] text-slate-500 dark:text-slate-400 h-6 px-2"
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                {fileTypeOptions.map((opt) => (
-                  <label
-                    key={opt.id}
-                    className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 cursor-pointer text-xs text-slate-700"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedTypes.includes(opt.id)}
-                      onChange={() => handleToggleType(opt.id)}
-                      className="rounded text-indigo-600"
-                    />
-                    <span>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
+                <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                  {fileTypeOptions.map((opt) => (
+                    <div
+                      key={opt.id}
+                      onClick={() => handleToggleType(opt.id)}
+                      className="flex items-center gap-2.5 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-workstation-surface/60 cursor-pointer text-xs text-slate-700 dark:text-slate-300 transition-colors"
+                    >
+                      <Checkbox
+                        size="sm"
+                        isSelected={selectedTypes.includes(opt.id)}
+                        onValueChange={() => handleToggleType(opt.id)}
+                      />
+                      <span>{opt.label}</span>
+                    </div>
+                  ))}
+                </div>
 
-              <div className="pt-3 border-t border-slate-100">
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={enableFragmentation}
-                    onChange={(e) => setEnableFragmentation(e.target.checked)}
-                    className="rounded text-indigo-600"
-                  />
-                  <span>Enable cluster-aligned fragment reconstruction</span>
-                </label>
-                <p className="text-[10px] text-slate-400 mt-1 pl-5">
-                  Evaluates discontinuities without hallucinating or fabricating missing data.
-                </p>
-              </div>
+                <Divider />
+
+                <div className="space-y-1">
+                  <Checkbox
+                    size="sm"
+                    isSelected={enableFragmentation}
+                    onValueChange={setEnableFragmentation}
+                    classNames={{
+                      label: 'text-xs text-slate-700 dark:text-slate-300',
+                    }}
+                  >
+                    Enable cluster-aligned fragment reconstruction
+                  </Checkbox>
+                  <p className="text-[10px] text-slate-400 pl-6">
+                    Evaluates discontinuities without hallucinating or fabricating missing data.
+                  </p>
+                </div>
             </div>
           </div>
 
           {(step2Error || error) && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-700 flex items-center gap-2">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-md text-xs text-rose-700 dark:text-rose-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{step2Error || error}</span>
             </div>
           )}
 
           <div className="flex justify-between pt-2">
-            <button
-              onClick={() => {
+            <Button
+              variant="flat"
+              onPress={() => {
                 setStep2Error(null);
                 setCurrentStep(1);
               }}
-              className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-medium rounded flex items-center gap-1.5"
+              startContent={<ArrowLeft className="w-4 h-4" />}
+              className="text-xs font-medium border border-slate-200 dark:border-workstation-border bg-white dark:bg-workstation-panel text-slate-700 dark:text-slate-300"
             >
-              <ArrowLeft className="w-4 h-4" />
               Back
-            </button>
-            <button
-              onClick={handleGeneratePlan}
-              disabled={isPlanning}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            </Button>
+            <Button
+              onPress={handleGeneratePlan}
+              isDisabled={isPlanning}
+              isLoading={isPlanning}
+              endContent={!isPlanning && <ArrowRight className="w-4 h-4" />}
+              className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold px-4"
             >
-              {isPlanning ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating Plan...
-                </>
-              ) : (
-                <>
-                  Review Pre-Flight Plan
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+              {isPlanning ? 'Generating Plan...' : 'Review Pre-Flight Plan'}
+            </Button>
           </div>
         </div>
       )}
@@ -476,76 +485,77 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
       {/* Step 3: Pre-Flight Review */}
       {currentStep === 3 && (
         !plan ? (
-          <div className="p-6 bg-amber-50 border border-amber-200 rounded-md text-center space-y-3">
-            <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" />
-            <p className="text-xs text-amber-800 font-medium">
+          <div className="border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-3 rounded-xs">
+            <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
+            <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
               No active recovery plan found. Please return to options to configure and generate a pre-flight plan.
             </p>
-            <button
-              onClick={() => setCurrentStep(2)}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded inline-flex items-center gap-1.5"
+            <Button
+              size="sm"
+              onPress={() => setCurrentStep(2)}
+              startContent={<ArrowLeft className="w-3.5 h-3.5" />}
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
               Back to Carving Options
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-white border border-slate-200 rounded-md p-5 space-y-4 shadow-2xs">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            <div className="border border-slate-200 dark:border-[#26313D] p-5 space-y-4 rounded-xs bg-white dark:bg-[#151C24]">
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-[#26313D] pb-3">
+                <ShieldCheck className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-800">
+                  <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                     Pre-Flight Evidential Safety Verification
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     Plan generated and cryptographically cross-verified against forensic source
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-2">
                   <div>
                     <span className="text-slate-400 text-[11px] block">Source Image:</span>
-                    <span className="font-mono text-slate-800 font-semibold">{plan.source_image_path}</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{plan.source_image_path}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">Verified Image SHA-256:</span>
-                    <span className="font-mono text-[11px] text-slate-700 break-all bg-slate-50 p-1 rounded border border-slate-100 block">
+                    <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 break-all bg-slate-50 dark:bg-workstation-surface p-1.5 rounded border border-slate-100 dark:border-[#26313D] block">
                       {plan.source_image_sha256}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">Recovery Mode:</span>
-                    <span className="text-slate-800 font-semibold">{plan.options.recovery_mode.toUpperCase()}</span>
+                    <span className="text-slate-800 dark:text-slate-200 font-semibold">{plan.options.recovery_mode.toUpperCase()}</span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <div>
                     <span className="text-slate-400 text-[11px] block">Output Directory:</span>
-                    <span className="font-mono text-slate-800 font-semibold">{plan.options.output_directory}</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{plan.options.output_directory}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">Target Types:</span>
-                    <span className="text-slate-700">
+                    <span className="text-slate-700 dark:text-slate-300">
                       {plan.options.target_file_types ? plan.options.target_file_types.join(', ') : 'All registered types'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 text-[11px] block">Minimum Confidence Score:</span>
-                    <span className="text-emerald-700 font-bold">{plan.options.min_confidence_score}%</span>
+                    <span className="text-slate-900 dark:text-slate-100 font-bold">{plan.options.min_confidence_score}%</span>
                   </div>
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded text-xs text-emerald-800 space-y-1">
-                <div className="font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="p-3 bg-slate-50 dark:bg-workstation-surface border border-slate-200 dark:border-[#26313D] rounded text-xs text-slate-900 dark:text-slate-100 space-y-1">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
                   Evidential Guarantee: Strictly Non-Destructive
                 </div>
-                <p className="text-[11px] text-emerald-700">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
                   The evidence image is accessed strictly read-only with streaming SHA-256 hash checks.
                   No physical devices or source image sectors will be modified. Recovered files are written exclusively into the designated output folder.
                 </p>
@@ -553,20 +563,21 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
             </div>
 
             <div className="flex justify-between pt-2">
-              <button
-                onClick={() => setCurrentStep(2)}
-                className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-medium rounded flex items-center gap-1.5"
+              <Button
+                variant="flat"
+                onPress={() => setCurrentStep(2)}
+                startContent={<ArrowLeft className="w-4 h-4" />}
+                className="text-xs font-medium border border-slate-200 dark:border-[#26313D] bg-white dark:bg-[#151C24] text-slate-700 dark:text-slate-300"
               >
-                <ArrowLeft className="w-4 h-4" />
                 Back
-              </button>
-              <button
-                onClick={handleStartExecution}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded flex items-center gap-1.5 transition-colors shadow-xs"
+              </Button>
+              <Button
+                onPress={handleStartExecution}
+                startContent={<Play className="w-4 h-4 fill-current" />}
+                className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold px-5 shadow-xs"
               >
-                <Play className="w-4 h-4 fill-white" />
                 Start Forensic Recovery
-              </button>
+              </Button>
             </div>
           </div>
         )
@@ -591,61 +602,63 @@ export const RecoveryWizard: React.FC<RecoveryWizardProps> = ({ sessionToken }) 
 
           {/* Failure state */}
           {workflowState === 'FAILED' && (
-            <div className="bg-white border border-rose-200 rounded-md p-6 space-y-4 shadow-xs">
+            <div className="border border-rose-200 dark:border-rose-900/40 p-5 space-y-4 rounded-xs bg-white dark:bg-[#151C24]">
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-full bg-rose-50 text-rose-600 shrink-0">
+                <div className="p-2.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 shrink-0">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-slate-900">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                     Filesystem Recovery Failed
                   </h4>
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     The filesystem analysis engine encountered an unrecoverable condition and halted to preserve evidentiary integrity.
                   </p>
-                  <div className="mt-2 p-3 bg-rose-50 border border-rose-100 rounded text-xs font-mono text-rose-800 break-words">
+                  <div className="mt-2 p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/30 rounded text-xs font-mono text-rose-800 dark:text-rose-300 break-words">
                     Reason: {error || 'An unexpected error halted filesystem recovery.'}
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => setCurrentStep(2)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded flex items-center gap-1.5 transition-colors"
+              <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-[#26313D]">
+                <Button
+                  size="sm"
+                  onPress={() => setCurrentStep(2)}
+                  startContent={<ArrowLeft className="w-4 h-4" />}
+                  className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900 text-xs font-semibold px-4"
                 >
-                  <ArrowLeft className="w-4 h-4" />
                   Back to Recovery Options
-                </button>
+                </Button>
               </div>
             </div>
           )}
 
           {/* Cancellation state */}
           {workflowState === 'CANCELLED' && (
-            <div className="bg-white border border-amber-200 rounded-md p-6 space-y-4 shadow-xs">
+            <div className="border border-amber-200 dark:border-amber-900/40 p-5 space-y-4 rounded-xs bg-white dark:bg-[#151C24]">
               <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-full bg-amber-50 text-amber-600 shrink-0">
+                <div className="p-2.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 shrink-0">
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-slate-900">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                     Recovery Cancelled
                   </h4>
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     The recovery operation was safely cancelled by the operator.
                   </p>
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => setCurrentStep(2)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded flex items-center gap-1.5 transition-colors"
+              <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-[#26313D]">
+                <Button
+                  size="sm"
+                  onPress={() => setCurrentStep(2)}
+                  startContent={<ArrowLeft className="w-4 h-4" />}
+                  className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900 text-xs font-semibold px-4"
                 >
-                  <ArrowLeft className="w-4 h-4" />
                   Back to Recovery Options
-                </button>
+                </Button>
               </div>
             </div>
           )}

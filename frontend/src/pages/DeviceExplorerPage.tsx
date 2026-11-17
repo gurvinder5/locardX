@@ -8,14 +8,23 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
-  Lock,
-  Layers,
-  Info,
-  AlertCircle,
   Database,
   Cpu,
+  Info,
 } from 'lucide-react';
-import { StorageDeviceDto, LogicalVolumeDto } from '../types/device';
+import {
+  Button,
+  Input,
+  Chip,
+  Progress,
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from '@heroui/react';
+import { StorageDeviceDto } from '../types/device';
 import { listStorageDevices } from '../services/device';
 
 function formatBytes(bytes: number): string {
@@ -73,7 +82,6 @@ export const DeviceExplorerPage: React.FC = () => {
     setExpandedDeviceIds(new Set());
   };
 
-  // Quick statistics
   const stats = useMemo(() => {
     const totalPhysical = devices.length;
     const totalVolumes = devices.reduce((sum, d) => sum + d.volumes.length, 0);
@@ -84,7 +92,6 @@ export const DeviceExplorerPage: React.FC = () => {
     return { totalPhysical, totalVolumes, systemDevices, removableDevices };
   }, [devices]);
 
-  // Filtered devices
   const filteredDevices = useMemo(() => {
     if (!searchQuery.trim()) return devices;
     const q = searchQuery.toLowerCase();
@@ -107,38 +114,33 @@ export const DeviceExplorerPage: React.FC = () => {
     switch (type) {
       case 'ssd':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-sky-50 text-sky-700 border border-sky-200">
-            <Cpu className="w-3 h-3" />
+          <Chip size="sm" variant="flat" startContent={<Cpu className="w-3 h-3" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D] text-[10px]">
             SSD
-          </span>
+          </Chip>
         );
       case 'hdd':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-300">
-            <HardDrive className="w-3 h-3" />
+          <Chip size="sm" variant="flat" startContent={<HardDrive className="w-3 h-3" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#26313D] text-[10px]">
             HDD
-          </span>
+          </Chip>
         );
       case 'usb':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-            <Usb className="w-3 h-3" />
+          <Chip size="sm" variant="flat" startContent={<Usb className="w-3 h-3" />} className="bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px]">
             USB
-          </span>
+          </Chip>
         );
       case 'memory_card':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <FolderInput className="w-3 h-3" />
-            Card
-          </span>
+          <Chip size="sm" variant="flat" startContent={<FolderInput className="w-3 h-3" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D] text-[10px]">
+            CARD
+          </Chip>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-            <Database className="w-3 h-3" />
-            Unknown
-          </span>
+          <Chip size="sm" variant="flat" startContent={<Database className="w-3 h-3" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-[#26313D] text-[10px]">
+            UNKNOWN
+          </Chip>
         );
     }
   };
@@ -146,318 +148,353 @@ export const DeviceExplorerPage: React.FC = () => {
   const renderClassificationBadge = (classification: string, isSystem: boolean) => {
     if (isSystem || classification === 'system_device' || classification === 'boot_device') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-          <ShieldAlert className="w-3 h-3 text-rose-600" />
-          System Device
-        </span>
+        <Chip size="sm" variant="flat" startContent={<ShieldAlert className="w-3 h-3 text-rose-600" />} className="bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 font-bold text-[10px]">
+          PROTECTED (SYSTEM)
+        </Chip>
       );
     }
     if (classification === 'removable_device') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-          <Usb className="w-3 h-3 text-amber-600" />
-          Removable Media
-        </span>
+        <Chip size="sm" variant="flat" startContent={<Usb className="w-3 h-3 text-amber-600" />} className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold text-[10px]">
+          REMOVABLE MEDIA
+        </Chip>
       );
     }
     if (classification === 'external_device') {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
-          <HardDrive className="w-3 h-3 text-indigo-600" />
-          External Storage
-        </span>
+        <Chip size="sm" variant="flat" startContent={<HardDrive className="w-3 h-3 text-slate-500" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#26313D] text-[10px]">
+          EXTERNAL STORAGE
+        </Chip>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-        <HardDrive className="w-3 h-3 text-slate-500" />
-        Fixed Data Device
-      </span>
+      <Chip size="sm" variant="flat" startContent={<HardDrive className="w-3 h-3 text-slate-500" />} className="bg-slate-100 dark:bg-[#1B2530] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-[#26313D] text-[10px]">
+        FIXED STORAGE
+      </Chip>
     );
   };
 
   return (
-    <div className="space-y-5 text-slate-800 font-sans">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+    <div className="space-y-6 text-slate-800 dark:text-slate-200 font-sans pb-10">
+      {/* 1. Page Heading */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-[#26313D] pb-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-slate-700" />
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <HardDrive className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             Device & Filesystem Explorer
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Read-only physical block device and logical volume hierarchy inspection.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Hierarchical physical storage devices, partition schemes, hardware telemetry, and mounted logical volume inspection.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadDevices}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-md shadow-2xs transition-colors disabled:opacity-50"
-            title="Rescan host storage devices"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
-            <span>{loading ? 'Scanning...' : 'Refresh Devices'}</span>
-          </button>
-        </div>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={loadDevices}
+          isLoading={loading}
+          startContent={!loading && <RefreshCw className="w-3.5 h-3.5" />}
+          className="border border-slate-300 dark:border-[#26313D] text-slate-700 dark:text-slate-300 font-semibold h-8 bg-slate-100 dark:bg-[#1B2530]"
+        >
+          {loading ? 'Scanning...' : 'Rescan Devices'}
+        </Button>
       </div>
 
-      {/* Safety Invariant Notice */}
-      <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-md text-amber-900 text-xs flex items-start gap-2.5">
-        <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+      {/* 2. Safety Invariant Strip (No Card) */}
+      <div className="border-l-2 border-amber-500 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+        <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
         <div className="leading-relaxed">
-          <span className="font-semibold">Forensic Safety Rule:</span> Device classification is provided for situational awareness only.
-          <span className="font-mono text-amber-800 ml-1">"Device classification is not authorization."</span>
-          Discovery routines operate strictly in read-only query mode without modifying partition tables, filesystem structures, or raw disk sectors.
+          <span className="font-semibold">Safety Boundary:</span> Storage enumeration executes strictly in non-invasive, read-only mode. Device classification is advisory and does not grant operational sanitization authorization without safety invariant validation.
         </div>
       </div>
 
-      {/* Statistics Banner */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
-          <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+      {/* 3. Inline Metrics Ribbon (No Cards) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-3 border-y border-slate-200 dark:border-[#26313D] text-xs">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
             Physical Disks
-          </div>
-          <div className="text-lg font-bold text-slate-900 mt-0.5">{stats.totalPhysical}</div>
+          </span>
+          <span className="text-lg font-bold font-mono text-slate-900 dark:text-slate-100 mt-0.5 block">
+            {stats.totalPhysical}
+          </span>
+          <span className="text-[11px] text-slate-500">Enumerated block targets</span>
         </div>
-        <div className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
-          <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+
+        <div className="sm:border-l sm:border-slate-200 sm:dark:border-[#26313D] sm:pl-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
             Logical Volumes
-          </div>
-          <div className="text-lg font-bold text-slate-900 mt-0.5">{stats.totalVolumes}</div>
+          </span>
+          <span className="text-lg font-bold font-mono text-slate-900 dark:text-slate-100 mt-0.5 block">
+            {stats.totalVolumes}
+          </span>
+          <span className="text-[11px] text-slate-500">Mounted / mapped partitions</span>
         </div>
-        <div className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
-          <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-            System Devices
-          </div>
-          <div className="text-lg font-bold text-rose-600 mt-0.5">{stats.systemDevices}</div>
+
+        <div className="sm:border-l sm:border-slate-200 sm:dark:border-[#26313D] sm:pl-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+            Protected System Devices
+          </span>
+          <span className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400 mt-0.5 block">
+            {stats.systemDevices}
+          </span>
+          <span className="text-[11px] text-slate-500">Boot & OS hard-interlocked</span>
         </div>
-        <div className="bg-white border border-slate-200 rounded-md p-3 shadow-2xs">
-          <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
-            Removable / USB
-          </div>
-          <div className="text-lg font-bold text-amber-600 mt-0.5">{stats.removableDevices}</div>
+
+        <div className="sm:border-l sm:border-slate-200 sm:dark:border-[#26313D] sm:pl-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+            Removable Targets
+          </span>
+          <span className="text-lg font-bold font-mono text-slate-900 dark:text-slate-100 mt-0.5 block">
+            {stats.removableDevices}
+          </span>
+          <span className="text-[11px] text-slate-500">USB flash & external media</span>
         </div>
       </div>
 
-      {/* Controls Bar: Search & Collapse Toggles */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-3 border border-slate-200 rounded-md shadow-2xs">
-        <div className="relative w-full sm:w-72">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-          <input
-            type="text"
-            placeholder="Filter by name, mount point, fs..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white transition-colors"
-          />
-        </div>
+      {/* 4. Controls Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+        <Input
+          size="sm"
+          placeholder="Filter by device ID, vendor, model, volume or filesystem..."
+          value={searchQuery}
+          onValueChange={setSearchQuery}
+          startContent={<Search className="w-3.5 h-3.5 text-slate-400" />}
+          className="max-w-md w-full text-xs"
+          classNames={{
+            inputWrapper: 'bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] h-8',
+          }}
+        />
 
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            onClick={expandAll}
-            className="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="light"
+            onPress={expandAll}
+            className="text-xs text-slate-600 dark:text-slate-400 h-7"
           >
             Expand All
-          </button>
-          <span className="text-slate-300">|</span>
-          <button
-            onClick={collapseAll}
-            className="px-2 py-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded transition-colors"
+          </Button>
+          <span className="text-slate-300 dark:text-[#26313D]">|</span>
+          <Button
+            size="sm"
+            variant="light"
+            onPress={collapseAll}
+            className="text-xs text-slate-600 dark:text-slate-400 h-7"
           >
             Collapse All
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Error Message */}
+      {/* Error State */}
       {error && (
-        <div className="p-3 bg-rose-50 border border-rose-200 rounded-md text-rose-800 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-          <span>{error}</span>
+        <div className="border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-300 p-3 rounded-sm text-xs flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0 text-rose-600" />
+          <span>Storage Discovery Error: {error}</span>
         </div>
       )}
 
-      {/* Device Hierarchy List */}
-      <div className="space-y-3">
-        {loading && devices.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-md p-8 text-center text-slate-500 text-xs">
-            Scanning host bus and logical storage devices...
+      {/* 5. Hierarchical Expandable Devices (Information-First Structure, No Cards) */}
+      <div className="space-y-4">
+        {loading ? (
+          <div className="py-12 text-center text-slate-400 text-xs">
+            Scanning platform physical storage buses and filesystems...
           </div>
         ) : filteredDevices.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-md p-8 text-center text-slate-500 text-xs">
-            {searchQuery ? 'No storage devices match filter criteria.' : 'No storage devices detected.'}
+          <div className="py-12 text-center text-slate-400 text-xs border border-dashed border-slate-300 dark:border-[#26313D] rounded-sm">
+            {searchQuery ? 'No storage devices match the query.' : 'No physical block devices discovered.'}
           </div>
         ) : (
           filteredDevices.map((device) => {
             const isExpanded = expandedDeviceIds.has(device.device_id);
+
             return (
               <div
                 key={device.device_id}
-                className="bg-white border border-slate-200 rounded-md shadow-2xs overflow-hidden transition-colors"
+                className="border border-slate-200 dark:border-[#26313D] rounded-sm overflow-hidden bg-white dark:bg-[#151C24] transition-colors"
               >
-                {/* Physical Device Header Row */}
+                {/* Physical Device Master Header Row */}
                 <div
                   onClick={() => toggleExpand(device.device_id)}
-                  className="px-4 py-3 bg-slate-50/80 hover:bg-slate-100/70 border-b border-slate-200 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none transition-colors"
+                  className="p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-[#1B2530]/50 select-none border-b border-transparent"
                 >
                   <div className="flex items-center gap-3">
-                    <button className="text-slate-500 hover:text-slate-700">
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                      aria-label="Toggle details"
+                    >
                       {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-slate-600" />
+                        <ChevronDown className="w-4 h-4 text-slate-600 dark:text-slate-300" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                        <ChevronRight className="w-4 h-4 text-slate-400" />
                       )}
                     </button>
 
-                    <div className="w-8 h-8 rounded bg-white border border-slate-200 flex items-center justify-center text-slate-700">
-                      {device.device_type === 'usb' ? (
-                        <Usb className="w-4 h-4 text-amber-600" />
-                      ) : (
-                        <HardDrive className="w-4 h-4 text-slate-700" />
-                      )}
-                    </div>
-
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-xs text-slate-900">
-                          {device.display_name}
-                        </span>
-                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-xs text-slate-900 dark:text-slate-100">
                           {device.device_id}
                         </span>
+                        {renderClassificationBadge(device.classification, device.is_system_device)}
+                        {renderDeviceTypeBadge(device.device_type)}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
-                        <span>Physical Capacity: {formatBytes(device.capacity_bytes)}</span>
-                        <span>&bull;</span>
-                        <span>{device.volumes.length} Logical Volume{device.volumes.length === 1 ? '' : 's'}</span>
+                      <div className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-0.5">
+                        {device.display_name}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto">
-                    {renderDeviceTypeBadge(device.device_type)}
-                    {renderClassificationBadge(device.classification, device.is_system_device)}
-                    {device.read_only && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-300">
-                        <Lock className="w-3 h-3" />
-                        Read-Only
+                  <div className="flex items-center gap-4 text-xs font-mono ml-7 md:ml-0">
+                    <div>
+                      <span className="text-slate-400 text-[10px] uppercase block">Type</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 uppercase">
+                        {device.device_type}
                       </span>
-                    )}
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] uppercase block">Capacity</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {formatBytes(device.capacity_bytes)}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] uppercase block">Volumes</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        {device.volumes.length}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Expanded Device Details & Volumes */}
+                {/* Expanded Device Details: Hardware Telemetry & Logical Volumes */}
                 {isExpanded && (
-                  <div className="p-4 space-y-4 bg-white">
-                    {/* Hardware Metadata Summary */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50/60 p-2.5 rounded border border-slate-200/80">
+                  <div className="p-4 pt-2 border-t border-slate-200 dark:border-[#26313D] bg-slate-50/50 dark:bg-[#10161D]/50 space-y-4 text-xs">
+                    {/* Aligned Label-Value Hardware Metadata Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-2 border-b border-slate-200/80 dark:border-[#26313D]">
                       <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Vendor</span>
-                        <span className="font-medium text-slate-700">{device.vendor || 'Generic / Undetected'}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Model</span>
-                        <span className="font-medium text-slate-700">{device.model || 'Undetected'}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Bus / Media</span>
-                        <span className="font-medium text-slate-700">
-                          {device.removable ? 'Removable Media' : 'Fixed Internal Storage'}
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
+                          Vendor / Manufacturer
+                        </span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block">
+                          {device.vendor || 'Generic / Platform Default'}
                         </span>
                       </div>
+
                       <div>
-                        <span className="text-slate-400 block text-[10px] uppercase font-semibold">Raw Capacity</span>
-                        <span className="font-mono text-slate-700">{device.capacity_bytes.toLocaleString()} bytes</span>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
+                          Model Identifier
+                        </span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate">
+                          {device.model || 'N/A'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
+                          Media Subsystem
+                        </span>
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate">
+                          {device.removable ? 'Removable Storage' : 'Fixed Media'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 block">
+                          Classification Note
+                        </span>
+                        <span className="font-mono font-medium text-slate-800 dark:text-slate-200 mt-0.5 block truncate" title={device.classification_note}>
+                          {device.classification_note || 'Standard Media'}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Logical Volumes Table */}
-                    <div>
-                      <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-slate-500" />
-                        Logical Volumes on Physical Device
+                    {/* Logical Volumes Sub-Table */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Logical Volumes ({device.volumes.length})
+                        </span>
                       </div>
 
                       {device.volumes.length === 0 ? (
-                        <div className="text-xs text-slate-500 p-3 bg-slate-50 rounded border border-slate-200">
-                          No mounted filesystem volumes detected on this physical device. (Unpartitioned space or unrecognized partition table).
+                        <div className="py-3 px-3 text-slate-400 italic text-[11px] bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] rounded-sm">
+                          Unpartitioned raw physical disk space or unrecognized partition scheme.
                         </div>
                       ) : (
-                        <div className="overflow-x-auto border border-slate-200 rounded">
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                              <tr>
-                                <th className="px-3 py-2">Mount</th>
-                                <th className="px-3 py-2">Label</th>
-                                <th className="px-3 py-2">Filesystem</th>
-                                <th className="px-3 py-2">Role</th>
-                                <th className="px-3 py-2">Capacity</th>
-                                <th className="px-3 py-2">Usage</th>
-                                <th className="px-3 py-2">Free Space</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {device.volumes.map((vol: LogicalVolumeDto) => {
-                                const usedBytes = vol.capacity_bytes > vol.free_bytes ? vol.capacity_bytes - vol.free_bytes : 0;
-                                const usedPercent = vol.capacity_bytes > 0 ? Math.round((usedBytes / vol.capacity_bytes) * 100) : 0;
+                        <Table
+                          aria-label={`Volumes for ${device.device_id}`}
+                          classNames={{
+                            base: 'min-w-full',
+                            table: 'min-w-full text-xs',
+                            thead: '[&>tr]:first:rounded-none',
+                            th: 'bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 font-semibold text-[10px] uppercase py-2 px-3 border-b border-slate-200 dark:border-[#26313D]',
+                            td: 'py-2 px-3 border-b border-slate-200 dark:border-[#26313D] text-slate-800 dark:text-slate-200',
+                            wrapper: 'bg-transparent shadow-none p-0 border border-slate-200 dark:border-[#26313D] rounded-sm',
+                          }}
+                        >
+                          <TableHeader>
+                            <TableColumn>MOUNT POINT</TableColumn>
+                            <TableColumn>VOLUME LABEL</TableColumn>
+                            <TableColumn>FILESYSTEM</TableColumn>
+                            <TableColumn>CAPACITY</TableColumn>
+                            <TableColumn>USAGE</TableColumn>
+                            <TableColumn>ACCESS</TableColumn>
+                          </TableHeader>
+                          <TableBody>
+                            {device.volumes.map((vol, idx) => {
+                              const usedBytes = vol.capacity_bytes - vol.free_bytes;
+                              const usedPercent =
+                                vol.capacity_bytes > 0
+                                  ? Math.round((usedBytes / vol.capacity_bytes) * 100)
+                                  : 0;
 
-                                return (
-                                  <tr key={vol.volume_id} className="hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-3 py-2 font-mono font-bold text-slate-900">
-                                      {vol.mount_point || 'Unmounted'}
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-700">
-                                      {vol.label || <span className="text-slate-400 italic">No Label</span>}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                                        {vol.filesystem_type}
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {vol.is_system_volume ? (
-                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 uppercase">
-                                          System Root
-                                        </span>
-                                      ) : (
-                                        <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                          Data
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 font-mono text-slate-700">
-                                      {formatBytes(vol.capacity_bytes)}
-                                    </td>
-                                    <td className="px-3 py-2 w-36">
-                                      <div className="space-y-1">
-                                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                          <div
-                                            className={`h-1.5 rounded-full ${
-                                              vol.is_system_volume
-                                                ? 'bg-rose-500'
-                                                : usedPercent > 85
-                                                ? 'bg-amber-500'
-                                                : 'bg-sky-500'
-                                            }`}
-                                            style={{ width: `${usedPercent}%` }}
-                                          />
-                                        </div>
-                                        <div className="text-[10px] text-slate-400 font-mono">
-                                          {usedPercent}% used
-                                        </div>
+                              return (
+                                <TableRow key={idx} className="hover:bg-slate-100/50 dark:hover:bg-[#151C24]">
+                                  <TableCell className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                                    {vol.mount_point || 'Unmounted'}
+                                  </TableCell>
+                                  <TableCell className="text-slate-600 dark:text-slate-300">
+                                    {vol.label || 'No Volume Label'}
+                                  </TableCell>
+                                  <TableCell className="font-mono uppercase text-[11px]">
+                                    {vol.filesystem_type}
+                                  </TableCell>
+                                  <TableCell className="font-mono text-[11px]">
+                                    {formatBytes(vol.capacity_bytes)}
+                                  </TableCell>
+                                  <TableCell className="min-w-[120px]">
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                                        <span>{usedPercent}%</span>
+                                        <span>{formatBytes(vol.free_bytes)} free</span>
                                       </div>
-                                    </td>
-                                    <td className="px-3 py-2 font-mono text-slate-700">
-                                      {formatBytes(vol.free_bytes)}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                                      <Progress
+                                        size="sm"
+                                        value={usedPercent}
+                                        aria-label={`Usage for ${vol.mount_point || 'volume'}`}
+                                        className="h-1"
+                                      />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {vol.read_only ? (
+                                      <Chip size="sm" variant="flat" className="font-mono text-[9px] font-bold bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 h-5">
+                                        READ-ONLY
+                                      </Chip>
+                                    ) : (
+                                      <Chip size="sm" variant="flat" className="font-mono text-[9px] font-semibold bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 h-5">
+                                        READ-WRITE
+                                      </Chip>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       )}
                     </div>
                   </div>

@@ -9,12 +9,20 @@ import {
   FileText,
   Folder,
   RefreshCw,
-  Info,
   CheckCircle2,
   XCircle,
   BookOpen,
-  X,
 } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Chip,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+} from '@heroui/react';
 import { StorageDeviceDto } from '../types/device';
 import { listStorageDevices } from '../services/device';
 import {
@@ -60,7 +68,6 @@ export const SanitizationPlannerPage: React.FC = () => {
   const [checkingSnapshot, setCheckingSnapshot] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Load storage devices and standards on mount
   useEffect(() => {
     loadHardwareDevices();
     loadStandards();
@@ -90,7 +97,6 @@ export const SanitizationPlannerPage: React.FC = () => {
     }
   }
 
-  // Auto-align scope when target type changes
   const handleTargetTypeChange = (type: string) => {
     setTargetType(type);
     if (type === 'PhysicalDevice') {
@@ -160,133 +166,114 @@ export const SanitizationPlannerPage: React.FC = () => {
     }
   };
 
-  // Find selected hardware telemetry
   const selectedDevice = devices.find((d) => d.device_id === selectedTargetId);
   const selectedVolume = devices
     .flatMap((d) => d.volumes)
     .find((v) => v.mount_point === selectedTargetId || v.volume_id === selectedTargetId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-10">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-[#26313D] pb-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 tracking-tight flex items-center gap-2">
-            <Cpu className="w-6 h-6 text-slate-700" />
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+            <Cpu className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             Sanitization Planner & Standards Engine
           </h1>
-          <p className="text-xs text-slate-700 mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Media-aware method selection, verification requirements, and standards mapping.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowStandardsModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition"
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={() => setShowStandardsModal(true)}
+            startContent={<BookOpen className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />}
+            className="text-xs font-semibold bg-white dark:bg-[#1B2530] border border-slate-300 dark:border-[#26313D] text-slate-700 dark:text-slate-300 h-8"
           >
-            <BookOpen className="w-3.5 h-3.5 text-slate-500" />
             Standards Registry
-          </button>
-          <button
-            onClick={loadHardwareDevices}
-            disabled={loadingDevices}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-50 transition disabled:opacity-50"
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={loadHardwareDevices}
+            isDisabled={loadingDevices}
+            startContent={<RefreshCw className={`w-3.5 h-3.5 ${loadingDevices ? 'animate-spin' : ''}`} />}
+            className="text-xs font-semibold bg-white dark:bg-[#1B2530] border border-slate-300 dark:border-[#26313D] text-slate-700 dark:text-slate-300 h-8"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingDevices ? 'animate-spin text-slate-500' : ''}`} />
             Refresh Devices
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Strict Non-Destructive Banner */}
-      <div className="bg-amber-50 border-l-4 border-amber-500 p-3.5 rounded-r">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-          <span className="text-xs font-semibold text-amber-900 uppercase tracking-wider">
-            PLANNING / DRY RUN — NO STORAGE MODIFICATION
+      {/* Strict Non-Destructive Banner (Flat Alert) */}
+      <div className="border-l-2 border-amber-500 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-start space-x-3">
+        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+        <div className="space-y-0.5 leading-relaxed">
+          <span className="font-bold uppercase tracking-wider text-[11px] block text-amber-800 dark:text-amber-300">
+            Planning / Dry Run Mode — Zero Storage Modification
           </span>
+          <p className="text-[11px] text-amber-900 dark:text-amber-200">
+            This workstation interface evaluates media compatibility, verification requirements, and technical limitations. All destructive storage modification engines remain disabled.
+          </p>
         </div>
-        <p className="text-xs text-amber-800 mt-1 ml-6">
-          This workstation interface evaluates media compatibility, verification requirements, and technical limitations.
-          <strong> All destructive storage modification engines remain disabled.</strong> No sectors, partitions, or files will be modified.
-        </p>
       </div>
 
       {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-1">
         {/* Left Column: Form Configuration */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white border border-slate-200 rounded p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-slate-500" />
-              Target & Scope Configuration
-            </h2>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-[#26313D]">
+              <Layers className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Target & Scope Configuration
+              </h2>
+            </div>
 
-            <form onSubmit={handleEvaluate} className="space-y-3.5">
+            <form onSubmit={handleEvaluate} className="space-y-4">
               {/* Target Type Selector */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Target Category</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Target Category
+                </label>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleTargetTypeChange('PhysicalDevice')}
-                    className={`py-1.5 px-2.5 rounded border text-left flex items-center gap-1.5 transition ${
-                      targetType === 'PhysicalDevice'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <HardDrive className="w-3.5 h-3.5" />
-                    Physical Drive
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTargetTypeChange('LogicalVolume')}
-                    className={`py-1.5 px-2.5 rounded border text-left flex items-center gap-1.5 transition ${
-                      targetType === 'LogicalVolume'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Logical Volume
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTargetTypeChange('Directory')}
-                    className={`py-1.5 px-2.5 rounded border text-left flex items-center gap-1.5 transition ${
-                      targetType === 'Directory'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Folder className="w-3.5 h-3.5" />
-                    Folder / Tree
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTargetTypeChange('File')}
-                    className={`py-1.5 px-2.5 rounded border text-left flex items-center gap-1.5 transition ${
-                      targetType === 'File'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    Single File
-                  </button>
+                  {[
+                    { key: 'PhysicalDevice', label: 'Physical Drive', icon: <HardDrive className="w-3.5 h-3.5" /> },
+                    { key: 'LogicalVolume', label: 'Logical Volume', icon: <Layers className="w-3.5 h-3.5" /> },
+                    { key: 'Directory', label: 'Folder / Tree', icon: <Folder className="w-3.5 h-3.5" /> },
+                    { key: 'File', label: 'Single File', icon: <FileText className="w-3.5 h-3.5" /> },
+                  ].map((item) => (
+                    <Button
+                      key={item.key}
+                      size="sm"
+                      variant={targetType === item.key ? 'solid' : 'flat'}
+                      onPress={() => handleTargetTypeChange(item.key)}
+                      startContent={item.icon}
+                      className={`justify-start text-xs h-8 rounded-xs ${
+                        targetType === item.key
+                          ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-bold shadow-2xs'
+                          : 'bg-white dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#26313D]'
+                      }`}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
                 </div>
               </div>
 
               {/* Target Selector / Input */}
               {targetType === 'PhysicalDevice' && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Select Physical Drive</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Select Physical Drive
+                  </label>
                   <select
                     value={selectedTargetId}
                     onChange={(e) => setSelectedTargetId(e.target.value)}
-                    className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                    className="w-full text-xs bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] rounded-xs px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500 font-mono"
                   >
                     {devices.map((d) => (
                       <option key={d.device_id} value={d.device_id}>
@@ -299,11 +286,13 @@ export const SanitizationPlannerPage: React.FC = () => {
 
               {targetType === 'LogicalVolume' && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Select Logical Volume</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Select Logical Volume
+                  </label>
                   <select
                     value={selectedTargetId}
                     onChange={(e) => setSelectedTargetId(e.target.value)}
-                    className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                    className="w-full text-xs bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] rounded-xs px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500 font-mono"
                   >
                     {devices.flatMap((d) =>
                       d.volumes.map((v) => (
@@ -318,24 +307,31 @@ export const SanitizationPlannerPage: React.FC = () => {
 
               {(targetType === 'File' || targetType === 'Directory') && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Path Identifier</label>
-                  <input
-                    type="text"
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Path Identifier
+                  </label>
+                  <Input
+                    size="sm"
                     value={customPath}
-                    onChange={(e) => setCustomPath(e.target.value)}
+                    onValueChange={setCustomPath}
                     placeholder="C:\path\to\target"
-                    className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500 font-mono"
+                    className="font-mono text-xs"
+                    classNames={{
+                      inputWrapper: 'bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] h-8',
+                    }}
                   />
                 </div>
               )}
 
               {/* Scope Selector */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Sanitization Scope</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Sanitization Scope
+                </label>
                 <select
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500"
+                  className="w-full text-xs bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] rounded-xs px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500"
                 >
                   <option value="PhysicalDevice">Physical Device (Whole Disk Overwrite/Crypto)</option>
                   <option value="LogicalVolume">Logical Volume (Partition Container)</option>
@@ -346,32 +342,34 @@ export const SanitizationPlannerPage: React.FC = () => {
 
               {/* Optional Method Override */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Method Selection <span className="text-slate-400 font-normal">(Auto-Selected if Default)</span>
                 </label>
                 <select
                   value={requestedMethod}
                   onChange={(e) => setRequestedMethod(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500"
+                  className="w-full text-xs bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] rounded-xs px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500"
                 >
                   <option value="">Auto-Recommend based on Media Type</option>
-                  <option value="Nist80088ClearZero">NIST SP 800-88 Rev. 1 (Clear - Single Pass Zero)</option>
-                  <option value="Nist80088PurgeCrypto">NIST SP 800-88 Rev. 1 (Purge - Cryptographic Erase)</option>
-                  <option value="Dod522022M">DoD 5220.22-M (3-Pass Overwrite & Verify)</option>
-                  <option value="NvmeCryptoErase">NVMe Base Spec Cryptographic Erase (Format)</option>
-                  <option value="LogicalFileShred">LocardX Logical File Shred & Unlink</option>
+                  <option value="Nist80088ClearZero">1. NIST SP 800-88 Rev. 1 (Clear - Single Pass Zero)</option>
+                  <option value="Nist80088PurgeCrypto">2. NIST SP 800-88 Rev. 1 (Purge - Cryptographic Erase)</option>
+                  <option value="Dod522022M">3. DoD 5220.22-M (3-Pass Overwrite & Verify)</option>
+                  <option value="NvmeCryptoErase">4. NVMe Base Spec Cryptographic Erase (Format SES=2)</option>
+                  <option value="AtaSecureErase">5. ATA Firmware Secure Erase / Sanitize (ACS-4)</option>
+                  <option value="BlockZeroOverwrite">6. Raw Block-Level Zero Overwrite</option>
+                  <option value="LogicalFileShred">7. LocardX Forensic File & Folder Shred & Unlink</option>
                 </select>
               </div>
 
               {/* Optional Verification Strategy Override */}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Verification Strategy <span className="text-slate-400 font-normal">(Auto-Selected if Default)</span>
                 </label>
                 <select
                   value={requestedStrategy}
                   onChange={(e) => setRequestedStrategy(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-slate-500"
+                  className="w-full text-xs bg-white dark:bg-[#151C24] border border-slate-300 dark:border-[#26313D] rounded-xs px-2.5 py-1.5 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-slate-500"
                 >
                   <option value="">Auto-Selected for Method</option>
                   <option value="SampledRandomSectors">Sampled Pseudo-Random Sectors (10%)</option>
@@ -384,82 +382,74 @@ export const SanitizationPlannerPage: React.FC = () => {
 
               {/* Submit Button */}
               <div className="pt-2">
-                <button
+                <Button
                   type="submit"
-                  disabled={evaluating}
-                  className="w-full py-2 px-4 bg-slate-900 text-white rounded text-xs font-medium hover:bg-slate-800 transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+                  isDisabled={evaluating}
+                  isLoading={evaluating}
+                  startContent={!evaluating && <Cpu className="w-3.5 h-3.5" />}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold text-xs h-8 shadow-xs"
                 >
-                  {evaluating ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      Evaluating Standards & Media...
-                    </>
-                  ) : (
-                    <>
-                      <Cpu className="w-3.5 h-3.5" />
-                      Evaluate Sanitization Plan (Dry Run)
-                    </>
-                  )}
-                </button>
+                  {evaluating ? 'Evaluating Standards & Media...' : 'Evaluate Sanitization Plan (Dry Run)'}
+                </Button>
               </div>
             </form>
           </div>
 
-          {/* Target Physical Telemetry Card */}
+          {/* Target Physical Telemetry (Aligned Label-Value Grid, No Card) */}
           {(selectedDevice || selectedVolume) && (
-            <div className="bg-slate-50 border border-slate-200 rounded p-3 text-xs space-y-1.5">
-              <div className="font-semibold text-slate-700 uppercase tracking-wider text-[10px]">
+            <div className="border border-slate-200 dark:border-[#26313D] p-3 rounded-xs bg-slate-50 dark:bg-[#10161D]/50 text-xs space-y-1.5">
+              <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px] block">
                 Hardware Telemetry Snapshot
-              </div>
+              </span>
               {selectedDevice && (
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-600">
-                  <div>Device ID: <span className="font-mono text-slate-900">{selectedDevice.device_id}</span></div>
-                  <div>Type: <span className="text-slate-900">{selectedDevice.device_type}</span></div>
-                  <div>Capacity: <span className="text-slate-900">{formatBytes(selectedDevice.capacity_bytes)}</span></div>
-                  <div>Classification: <span className="text-slate-900">{selectedDevice.classification}</span></div>
-                  <div>System Device: <span className={selectedDevice.is_system_device ? 'text-red-700 font-semibold' : 'text-slate-900'}>{selectedDevice.is_system_device ? 'YES' : 'No'}</span></div>
-                  <div>Removable: <span className="text-slate-900">{selectedDevice.removable ? 'Yes' : 'No'}</span></div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-600 dark:text-slate-400">
+                  <div>Device ID: <span className="font-mono text-slate-900 dark:text-slate-100 font-semibold">{selectedDevice.device_id}</span></div>
+                  <div>Type: <span className="text-slate-900 dark:text-slate-100">{selectedDevice.device_type}</span></div>
+                  <div>Capacity: <span className="text-slate-900 dark:text-slate-100">{formatBytes(selectedDevice.capacity_bytes)}</span></div>
+                  <div>Classification: <span className="text-slate-900 dark:text-slate-100">{selectedDevice.classification}</span></div>
+                  <div>System Device: <span className={selectedDevice.is_system_device ? 'text-rose-700 dark:text-rose-400 font-semibold' : 'text-slate-900 dark:text-slate-100'}>{selectedDevice.is_system_device ? 'YES' : 'No'}</span></div>
+                  <div>Removable: <span className="text-slate-900 dark:text-slate-100">{selectedDevice.removable ? 'Yes' : 'No'}</span></div>
                 </div>
               )}
               {selectedVolume && (
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-600 pt-1 border-t border-slate-200">
-                  <div>Mount: <span className="font-mono text-slate-900">{selectedVolume.mount_point || 'None'}</span></div>
-                  <div>Filesystem: <span className="text-slate-900">{selectedVolume.filesystem_type}</span></div>
-                  <div>System Volume: <span className={selectedVolume.is_system_volume ? 'text-red-700 font-semibold' : 'text-slate-900'}>{selectedVolume.is_system_volume ? 'YES' : 'No'}</span></div>
-                  <div>Boot Volume: <span className={selectedVolume.is_boot_volume ? 'text-red-700 font-semibold' : 'text-slate-900'}>{selectedVolume.is_boot_volume ? 'YES' : 'No'}</span></div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-600 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-[#26313D]">
+                  <div>Mount: <span className="font-mono text-slate-900 dark:text-slate-100 font-semibold">{selectedVolume.mount_point || 'None'}</span></div>
+                  <div>Filesystem: <span className="text-slate-900 dark:text-slate-100">{selectedVolume.filesystem_type}</span></div>
+                  <div>System Volume: <span className={selectedVolume.is_system_volume ? 'text-rose-700 dark:text-rose-400 font-semibold' : 'text-slate-900 dark:text-slate-100'}>{selectedVolume.is_system_volume ? 'YES' : 'No'}</span></div>
+                  <div>Boot Volume: <span className={selectedVolume.is_boot_volume ? 'text-rose-700 dark:text-rose-400 font-semibold' : 'text-slate-900 dark:text-slate-100'}>{selectedVolume.is_boot_volume ? 'YES' : 'No'}</span></div>
                 </div>
               )}
             </div>
           )}
 
           {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-xs text-red-800 flex items-start gap-2">
-              <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xs text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2">
+              <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
         </div>
 
-        {/* Right Column: Evaluated Plan Display */}
+        {/* Right Column: Evaluated Plan Display (Flat Information-First) */}
         <div className="lg:col-span-7 space-y-4">
           {currentPlan ? (
-            <div className="bg-white border border-slate-200 rounded shadow-sm overflow-hidden">
+            <div className="space-y-4">
               {/* Verdict Header Banner */}
               <div
-                className={`px-4 py-3.5 border-b flex items-center justify-between ${
+                className={`p-3.5 border-l-2 flex items-center justify-between ${
                   currentPlan.is_applicable
-                    ? 'bg-emerald-50 border-emerald-200'
-                    : 'bg-red-50 border-red-200'
+                    ? 'border-l-slate-700 bg-slate-100 dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D]'
+                    : 'border-l-rose-600 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   {currentPlan.is_applicable ? (
-                    <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                    <ShieldCheck className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                   ) : (
-                    <ShieldAlert className="w-5 h-5 text-red-600" />
+                    <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400" />
                   )}
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-900">
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100">
                       {currentPlan.is_applicable
                         ? 'Sanitization Plan Formulated (Dry Run)'
                         : 'Sanitization Hard-Blocked / Incompatible'}
@@ -471,154 +461,165 @@ export const SanitizationPlannerPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    className={`text-[10px] font-bold uppercase ${
                       currentPlan.is_applicable
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-red-100 text-red-800'
+                        ? 'bg-slate-200 dark:bg-[#26313D] text-slate-800 dark:text-slate-200'
+                        : 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300'
                     }`}
                   >
                     {currentPlan.is_applicable ? 'Applicable' : 'Blocked'}
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                  </Chip>
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    className={`text-[10px] font-bold uppercase ${
                       currentPlan.risk_level === 'Critical'
-                        ? 'bg-red-100 text-red-800'
+                        ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300'
                         : currentPlan.risk_level === 'High'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-100 text-slate-700'
+                        ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300'
+                        : 'bg-slate-200 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     Risk: {currentPlan.risk_level}
-                  </span>
+                  </Chip>
                 </div>
               </div>
 
-              {/* Plan Metadata Grid */}
-              <div className="p-4 space-y-4 text-xs">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-slate-50 rounded border border-slate-100">
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Target</span>
-                    <span className="font-mono font-medium text-slate-900 truncate block">
-                      {currentPlan.target_identifier}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Media Category</span>
-                    <span className="text-slate-900 font-medium">{currentPlan.media_type}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Scope</span>
-                    <span className="text-slate-900 font-medium">{currentPlan.scope}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Recommended Method</span>
-                    <span className="text-slate-900 font-medium">{currentPlan.recommended_method}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Formal Standard</span>
-                    <span className="text-slate-900 font-medium">{currentPlan.applicable_standard || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verification Strategy</span>
-                    <span className="text-slate-900 font-medium">{currentPlan.verification_strategy}</span>
-                  </div>
-                </div>
-
-                {/* Technical Limitations Section */}
+              {/* Plan Metadata Aligned Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-[#151C24] rounded-xs border border-slate-200 dark:border-[#26313D] text-xs">
                 <div>
-                  <h3 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Target</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-100 truncate block mt-0.5">
+                    {currentPlan.target_identifier}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Media Category</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-medium mt-0.5 block">{currentPlan.media_type}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Scope</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-medium mt-0.5 block">{currentPlan.scope}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Recommended Method</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold mt-0.5 block">{currentPlan.recommended_method}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Formal Standard</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-medium mt-0.5 block">{currentPlan.applicable_standard || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Verification Strategy</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-medium mt-0.5 block">{currentPlan.verification_strategy}</span>
+                </div>
+              </div>
+
+              {/* Technical Limitations Section */}
+              {currentPlan.limitations.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider block">
                     Documented Verification Limitations
-                  </h3>
-                  <ul className="space-y-1.5">
+                  </span>
+                  <ul className="space-y-1">
                     {currentPlan.limitations.map((lim, idx) => (
                       <li
                         key={idx}
-                        className="p-2 bg-amber-50/60 border border-amber-200/60 rounded text-[11px] text-amber-900 flex items-start gap-2"
+                        className="p-2.5 bg-amber-500/10 border-l-2 border-amber-500 text-[11px] text-amber-900 dark:text-amber-200"
                       >
-                        <span className="text-amber-500 font-bold shrink-0">•</span>
-                        <span>{lim}</span>
+                        {lim}
                       </li>
                     ))}
                   </ul>
                 </div>
+              )}
 
-                {/* Reason Codes if any */}
-                {currentPlan.reason_codes.length > 0 && (
+              {/* Reason Codes */}
+              {currentPlan.reason_codes.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                    Reason Telemetry
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {currentPlan.reason_codes.map((rc, idx) => (
+                      <Chip
+                        key={idx}
+                        size="sm"
+                        variant="flat"
+                        className="font-mono text-[10px] bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#26313D]"
+                      >
+                        {rc}
+                      </Chip>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TOCTOU Live Snapshot Integrity Guard */}
+              <div className="pt-3 border-t border-slate-200 dark:border-[#26313D] space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-semibold text-slate-900 mb-1.5">Reason Telemetry</h3>
-                    <div className="flex flex-wrap gap-1.5">
-                      {currentPlan.reason_codes.map((rc, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 font-mono text-[10px] rounded bg-slate-100 text-slate-700 border border-slate-200"
-                        >
-                          {rc}
-                        </span>
-                      ))}
-                    </div>
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-xs uppercase tracking-wider">
+                      Snapshot Integrity & TOCTOU Guard
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Re-probes hardware to verify device capacity, serial, and geometry have not changed.
+                    </p>
                   </div>
-                )}
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    onPress={handleCheckSnapshot}
+                    isDisabled={checkingSnapshot}
+                    isLoading={checkingSnapshot}
+                    startContent={!checkingSnapshot && <RefreshCw className="w-3 h-3" />}
+                    className="bg-white dark:bg-[#1B2530] border border-slate-300 dark:border-[#26313D] text-xs font-semibold text-slate-700 dark:text-slate-300 h-8"
+                  >
+                    Verify Live Snapshot
+                  </Button>
+                </div>
 
-                {/* TOCTOU Live Snapshot Integrity Guard Card */}
-                <div className="pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-semibold text-slate-900 text-xs">Snapshot Integrity & TOCTOU Guard</h4>
-                      <p className="text-[11px] text-slate-500">
-                        Re-probes hardware to verify device capacity, serial, and geometry have not changed.
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleCheckSnapshot}
-                      disabled={checkingSnapshot}
-                      className="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${checkingSnapshot ? 'animate-spin' : ''}`} />
-                      Verify Live Snapshot
-                    </button>
-                  </div>
-
-                  {snapshotResult && (
-                    <div
-                      className={`mt-2.5 p-2.5 rounded border text-xs ${
-                        snapshotResult.matches
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                          : 'bg-red-50 border-red-200 text-red-900'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 font-medium">
-                        {snapshotResult.matches ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            Hardware Match Confirmed: Target geometry and identity unchanged.
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-4 h-4 text-red-600" />
-                            Target Changed: {snapshotResult.reason}
-                          </>
-                        )}
-                      </div>
-                      {snapshotResult.differences.length > 0 && (
-                        <ul className="mt-1.5 list-disc list-inside text-[11px]">
-                          {snapshotResult.differences.map((diff, idx) => (
-                            <li key={idx}>{diff}</li>
-                          ))}
-                        </ul>
+                {snapshotResult && (
+                  <div
+                    className={`p-3 rounded-xs border text-xs ${
+                      snapshotResult.matches
+                        ? 'bg-slate-100 dark:bg-[#1B2530] border-slate-300 dark:border-[#26313D] text-slate-800 dark:text-slate-200'
+                        : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/40 text-rose-900 dark:text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-semibold">
+                      {snapshotResult.matches ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                          Hardware Match Confirmed: Target geometry and identity unchanged.
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          Target Changed: {snapshotResult.reason}
+                        </>
                       )}
                     </div>
-                  )}
-                </div>
+                    {snapshotResult.differences.length > 0 && (
+                      <ul className="mt-1.5 list-disc list-inside text-[11px]">
+                        {snapshotResult.differences.map((diff, idx) => (
+                          <li key={idx}>{diff}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
-            <div className="bg-white border border-slate-200 rounded p-8 text-center shadow-sm">
-              <Cpu className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-sm font-semibold text-slate-700">No Plan Evaluated Yet</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                Configure a target storage identifier and scope on the left, then click <strong>Evaluate Sanitization Plan</strong> to generate a deterministic standards plan.
+            <div className="text-center py-16 border border-dashed border-slate-300 dark:border-[#26313D] rounded-sm space-y-2">
+              <Cpu className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">No Plan Evaluated Yet</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                Configure a target storage identifier and scope on the left, then click <strong>Evaluate Sanitization Plan</strong>.
               </p>
             </div>
           )}
@@ -626,74 +627,66 @@ export const SanitizationPlannerPage: React.FC = () => {
       </div>
 
       {/* Standards Registry Reference Modal */}
-      {showStandardsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white border border-slate-200 rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-slate-700" />
-                Sanitization Standards & Verification Registry
-              </h3>
-              <button
-                onClick={() => setShowStandardsModal(false)}
-                className="text-slate-400 hover:text-slate-700 transition"
+      <Modal
+        isOpen={showStandardsModal}
+        onClose={() => setShowStandardsModal(false)}
+        size="2xl"
+        scrollBehavior="inside"
+        classNames={{
+          base: 'bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D]',
+          header: 'border-b border-slate-200 dark:border-[#26313D]',
+          footer: 'border-t border-slate-200 dark:border-[#26313D]',
+        }}
+      >
+        <ModalContent>
+          <ModalHeader className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Sanitization Standards & Verification Registry
+            </span>
+          </ModalHeader>
+
+          <ModalBody className="p-5 space-y-4 text-xs">
+            {standards.map((std) => (
+              <div
+                key={std.standard_id}
+                className="border border-slate-200 dark:border-[#26313D] p-3 rounded-xs space-y-1.5 bg-slate-50/50 dark:bg-[#10161D]/50"
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {standards.map((std) => (
-                <div key={std.standard_id} className="p-3.5 border border-slate-200 rounded bg-slate-50/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">{std.standard_name}</span>
-                    <span className="px-2 py-0.5 rounded font-mono text-[10px] bg-slate-200 text-slate-800">
-                      {std.method_id}
-                    </span>
-                  </div>
-                  <p className="text-slate-600 text-[11px]">{std.description}</p>
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">Applicable Media</span>
-                      <span className="text-slate-800">{std.applicable_media.join(', ')}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">Recommended Verification</span>
-                      <span className="text-slate-800">{std.recommended_verification}</span>
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] pt-1">
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verification Requirements</span>
-                    <span className="text-slate-700 italic">{std.verification_requirements}</span>
-                  </div>
-
-                  {std.limitations.length > 0 && (
-                    <div className="text-[11px] pt-1">
-                      <span className="text-slate-400 block text-[10px] uppercase font-semibold">Limitations</span>
-                      <ul className="list-disc list-inside text-amber-900">
-                        {std.limitations.map((l, i) => (
-                          <li key={i}>{l}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-slate-100">{std.standard_name || std.method_name}</span>
+                  <Chip size="sm" variant="flat" className="font-mono text-[9px] uppercase">
+                    {std.standard_id}
+                  </Chip>
                 </div>
-              ))}
-            </div>
+                <p className="text-slate-600 dark:text-slate-400 text-[11px]">{std.description}</p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {(std.applicable_media || []).map((med: string, i: number) => (
+                    <span
+                      key={i}
+                      className="text-[9px] bg-slate-200 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded-xs"
+                    >
+                      {med}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </ModalBody>
 
-            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
-              <button
-                onClick={() => setShowStandardsModal(false)}
-                className="px-3.5 py-1.5 bg-slate-900 text-white rounded text-xs font-medium hover:bg-slate-800 transition"
-              >
-                Close Registry
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          <ModalFooter>
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={() => setShowStandardsModal(false)}
+              className="text-xs bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-[#26313D]"
+            >
+              Close Registry
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 };
+
+export default SanitizationPlannerPage;

@@ -552,27 +552,53 @@ impl RecoveryService {
         Ok(job_opt)
     }
 
-    /// Lists all recovery jobs stored in the database.
+    /// Lists all recovery jobs stored in the database in a single query without over-fetching recovered file payloads.
     pub fn list_jobs(&self) -> Result<Vec<RecoveryResult>, LocardError> {
-        let job_ids: Vec<String> = self.db.with_conn(|conn| {
-            let mut stmt =
-                conn.prepare("SELECT job_id FROM recovery_jobs ORDER BY started_at DESC")?;
-            let rows = stmt.query_map([], |r| r.get(0))?;
-            let mut ids = Vec::new();
-            for id in rows {
-                ids.push(id?);
-            }
-            Ok(ids)
-        })?;
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT job_id, operation_id, acquisition_id, source_image_path, source_image_sha256,
+                        status, bytes_scanned, files_recovered, candidates_evaluated, elapsed_seconds,
+                        failure_reason, audit_reference, started_at, completed_at
+                 FROM recovery_jobs ORDER BY started_at DESC",
+            )?;
 
-        let mut results = Vec::new();
-        for id in job_ids {
-            if let Some(job) = self.get_job(&id)? {
-                results.push(job);
-            }
-        }
+            let rows = stmt.query_map([], |row| {
+                let status_str: String = row.get(5).unwrap_or_default();
+                let status = match status_str.as_str() {
+                    "Completed" => RecoveryStatus::Completed,
+                    "Cancelled" => RecoveryStatus::Cancelled,
+                    "Failed" => RecoveryStatus::Failed,
+                    "Scanning" => RecoveryStatus::Scanning,
+                    _ => RecoveryStatus::Pending,
+                };
 
-        Ok(results)
+                let fail_reason: Option<String> = row.get(10).ok();
+
+                Ok(RecoveryResult {
+                    job_id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    acquisition_id: row.get(2)?,
+                    source_image_path: row.get(3)?,
+                    source_image_sha256: row.get(4)?,
+                    status,
+                    bytes_scanned: row.get::<_, i64>(6)? as u64,
+                    files_recovered: row.get::<_, i64>(7)? as usize,
+                    candidates_evaluated: row.get::<_, i64>(8)? as usize,
+                    elapsed_seconds: row.get(9)?,
+                    failure_reason: fail_reason.map(RecoveryFailureReason::Unknown),
+                    recovered_files: Vec::new(),
+                    audit_reference: row.get(11)?,
+                    started_at: row.get(12)?,
+                    completed_at: row.get(13)?,
+                })
+            })?;
+
+            let mut results = Vec::new();
+            for r in rows {
+                results.push(r?);
+            }
+            Ok(results)
+        })
     }
 
     /// Retrieves all recovered files for a specific job.

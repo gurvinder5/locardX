@@ -120,6 +120,55 @@ impl SanitizationStandardsRegistry {
                         .to_string(),
             },
             SanitizationStandardDefinition {
+                standard_id: "ATA_SECURE_ERASE".to_string(),
+                standard_name: "ATA Command Set (ACS-4 / Firmware Secure Erase)".to_string(),
+                method_id: "ata_secure_erase".to_string(),
+                method_name: "ATA Firmware Secure Erase / Sanitize".to_string(),
+                method: SanitizationMethod::AtaSecureErase,
+                applicable_scopes: vec![SanitizationScope::PhysicalDevice],
+                applicable_media: vec![MediaType::Ssd, MediaType::Hdd],
+                recommended_verification: VerificationStrategy::SampledRandomSectors,
+                verification_requirements:
+                    "Validate ATA controller security register status and sampled sector zero-readback."
+                        .to_string(),
+                limitations: vec![
+                    "Requires direct SATA/IDE interface; USB bridge translation blocks ATA Security command pass-through."
+                        .to_string(),
+                    VerificationLimitations::CONTROLLER_FIRMWARE_BYPASS.to_string(),
+                ],
+                description:
+                    "Issues low-level ATA SECURITY ERASE UNIT or SANITIZE command instructing drive controller firmware to purge all accessible blocks and translation tables."
+                        .to_string(),
+            },
+            SanitizationStandardDefinition {
+                standard_id: "BLOCK_ZERO_OVERWRITE".to_string(),
+                standard_name: "LocardX Raw Block Sanitization Standard".to_string(),
+                method_id: "block_zero_overwrite".to_string(),
+                method_name: "Raw Block-Level Zero Overwrite".to_string(),
+                method: SanitizationMethod::BlockZeroOverwrite,
+                applicable_scopes: vec![
+                    SanitizationScope::LogicalVolume,
+                    SanitizationScope::PhysicalDevice,
+                ],
+                applicable_media: vec![
+                    MediaType::Hdd,
+                    MediaType::UsbRemovable,
+                    MediaType::MemoryCard,
+                    MediaType::ExternalStorage,
+                ],
+                recommended_verification: VerificationStrategy::SampledRandomSectors,
+                verification_requirements:
+                    "Sequential sample verification across block addresses verifying 0x00 null byte stream."
+                        .to_string(),
+                limitations: vec![
+                    VerificationLimitations::BAD_SECTOR_REMAPPING.to_string(),
+                    VerificationLimitations::HOST_BUFFER_CACHE.to_string(),
+                ],
+                description:
+                    "Direct sequential raw block write stream replacing all sectors with 0x00 null bytes without protocol negotiation."
+                        .to_string(),
+            },
+            SanitizationStandardDefinition {
                 standard_id: "LOGICAL_FILE_SHRED".to_string(),
                 standard_name: "LocardX Forensic File Sanitization Standard".to_string(),
                 method_id: "logical_file_shred_unlink".to_string(),

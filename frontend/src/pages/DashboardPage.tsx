@@ -7,9 +7,22 @@ import {
   Briefcase,
   ClipboardList,
   ArrowRight,
-  FolderOpen,
   CheckCircle2,
+  HardDrive,
+  FileCheck,
+  Layers,
 } from 'lucide-react';
+import {
+  Button,
+  Chip,
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+  Divider,
+} from '@heroui/react';
 import { AppInfo } from '../services/tauri';
 import { listCases, verifyAuditChain } from '../services/case';
 import { Case, AuditChainVerification } from '../types/case';
@@ -37,7 +50,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ appInfo, loading, 
       try {
         setLoadingCases(true);
         const [caseRes, auditRes] = await Promise.all([
-          listCases(undefined, 5, 0),
+          listCases(undefined, 8, 0),
           verifyAuditChain(),
         ]);
         if (isMounted) {
@@ -61,309 +74,365 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ appInfo, loading, 
   const openCasesCount = cases.filter((c) => c.status === 'open' || c.status === 'in_progress').length;
 
   return (
-    <div className="space-y-6 text-slate-800 font-sans">
-      {/* Workstation Status Banner */}
-      <section className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              LocardX Unified Forensic & Sanitization Workstation
-            </h2>
-            <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-              Cryptographic SHA-256 chain-of-custody, read-only disk acquisition, deep file carving, NIST SP 800-88 sanitization, and case management active.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 font-mono text-xs text-slate-700 bg-slate-50 px-3 py-1.5 rounded border border-slate-200">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+    <div className="space-y-6 text-slate-800 dark:text-slate-200 font-sans pb-10">
+      {/* 1. Page Heading */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200 dark:border-[#26313D]">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+            Forensic Workstation Overview
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            LocardX enterprise forensic workstation — Bitstream acquisition, deep carving, NIST SP 800-88 sanitization, and SHA-256 chain of custody.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-sm bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#26313D]">
+            <span className="w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-500" />
             <span>IPC Core: {loading ? 'Querying...' : appInfo?.build_status || 'Operational'}</span>
           </div>
+          {onNavigate && (
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={() => onNavigate('cases')}
+              className="text-xs font-semibold h-8 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+            >
+              New Investigation
+            </Button>
+          )}
         </div>
-      </section>
+      </div>
 
-      {/* Active Case Highlights */}
+      {/* 2. Contextual Active Case Bar */}
       {activeCase ? (
-        <section className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white border border-sky-800/60 rounded-md p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-slate-100/70 dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] rounded-sm text-xs">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-sky-500/20 rounded-md border border-sky-400/30 text-sky-400">
-              <Briefcase className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
-                  Active Investigation
-                </span>
-                <span className="text-[11px] font-mono bg-sky-900/80 px-2 py-0.5 rounded border border-sky-700/50 text-sky-100 font-bold">
-                  {activeCase.case_reference}
-                </span>
-                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {activeCase.status}
-                </span>
-              </div>
-              <h3 className="text-sm font-semibold text-white mt-1">{activeCase.title}</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Lead: <span className="text-slate-300">{activeCase.lead_investigator}</span> • Created: {new Date(activeCase.created_at).toLocaleDateString()}
-              </p>
+            <Briefcase className="w-4 h-4 text-slate-600 dark:text-slate-400 shrink-0" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
+                Active Case:
+              </span>
+              <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                {activeCase.case_reference}
+              </span>
+              <span className="text-slate-400">·</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {activeCase.title}
+              </span>
+              <Chip size="sm" variant="flat" className="text-[9px] font-bold uppercase h-5 bg-slate-200 dark:bg-[#26313D] text-slate-800 dark:text-slate-200">
+                {activeCase.status}
+              </Chip>
+              <span className="text-slate-400 hidden md:inline">·</span>
+              <span className="text-slate-500 dark:text-slate-400 hidden md:inline">
+                Lead: <span className="font-medium text-slate-700 dark:text-slate-300">{activeCase.lead_investigator}</span>
+              </span>
             </div>
           </div>
           {onNavigate && (
-            <button
-              onClick={() => onNavigate('cases')}
-              className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded shadow-xs transition-colors flex items-center gap-1.5 shrink-0"
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => onNavigate('cases')}
+              endContent={<ArrowRight className="w-3.5 h-3.5" />}
+              className="text-xs font-semibold text-slate-900 dark:text-slate-100 h-7 shrink-0"
             >
-              <span>Case Workspace</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+              Case Workspace
+            </Button>
           )}
-        </section>
+        </div>
       ) : (
-        <section className="bg-slate-50 border border-dashed border-slate-300 rounded-md p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5 text-slate-600">
-            <Briefcase className="w-4 h-4 text-slate-400 shrink-0" />
-            <span>No active case currently selected. Forensic acquisitions and recoveries require an active case.</span>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-[#151C24]/40 border border-dashed border-slate-300 dark:border-[#26313D] rounded-sm text-xs">
+          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+            <Briefcase className="w-4 h-4 shrink-0" />
+            <span>No active case currently selected. Forensic acquisitions and recoveries require an active case context.</span>
           </div>
           {onNavigate && (
-            <button
-              onClick={() => onNavigate('cases')}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 shrink-0"
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => onNavigate('cases')}
+              endContent={<ArrowRight className="w-3.5 h-3.5" />}
+              className="text-xs font-semibold text-slate-700 dark:text-slate-300 h-7 shrink-0"
             >
-              <span>Select Active Case</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+              Select Active Case
+            </Button>
           )}
-        </section>
+        </div>
       )}
 
-      {/* Case Management & Quick Navigation Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Active Cases */}
-        <div
-          onClick={() => onNavigate && onNavigate('cases')}
-          className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-indigo-300 cursor-pointer transition-all group"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Investigation Cases</span>
-            <Briefcase className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
-            {loadingCases ? '...' : cases.length}
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-            <span>{openCasesCount} active / in-progress</span>
-            <span className="text-indigo-600 font-medium group-hover:underline flex items-center gap-0.5">
-              Open Cases <ArrowRight className="w-3 h-3" />
+      {/* 3. Horizontal Inline Metrics Ribbon (No Cards) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y border-slate-200 dark:border-[#26313D]">
+        <div className="space-y-1">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 block">
+            Investigations
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100">
+              {loadingCases ? '...' : cases.length}
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              ({openCasesCount} active)
             </span>
           </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Evidence cases registered
+          </p>
         </div>
 
-        {/* KPI 2: Cryptographic Audit Status */}
-        <div
-          onClick={() => onNavigate && onNavigate('audit-logs')}
-          className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-emerald-300 cursor-pointer transition-all group"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Audit Chain Status</span>
-            <ClipboardList className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="text-sm font-bold text-emerald-700 mt-3 flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>{auditStatus?.is_valid ? 'Chain Verified' : 'Checking...'}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
-            <span>{auditStatus ? `${auditStatus.total_events} events chained` : 'Zero tampering detected'}</span>
-            <span className="text-emerald-600 font-medium group-hover:underline flex items-center gap-0.5">
-              Inspect Log <ArrowRight className="w-3 h-3" />
+        <div className="space-y-1 md:border-l md:border-slate-200 md:dark:border-[#26313D] md:pl-4">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 block">
+            Audit Ledger Integrity
+          </span>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-100 font-mono">
+              {auditStatus?.is_valid ? 'Chain Verified' : 'Checking...'}
             </span>
           </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {auditStatus ? `${auditStatus.total_events} cryptographic records` : 'Zero tampering detected'}
+          </p>
         </div>
 
-        {/* KPI 3: Forensic Acquisition */}
-        <div
-          onClick={() => onNavigate && onNavigate('acquisition')}
-          className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-blue-300 cursor-pointer transition-all group"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Forensic Acquisition</span>
-            <Download className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
-            Raw DD
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-            <span>Streaming SHA-256</span>
-            <span className="text-blue-600 font-medium group-hover:underline flex items-center gap-0.5">
-              Acquire <ArrowRight className="w-3 h-3" />
+        <div className="space-y-1 md:border-l md:border-slate-200 md:dark:border-[#26313D] md:pl-4">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 block">
+            Acquisition Subsystem
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-bold font-mono text-slate-900 dark:text-slate-100">
+              Raw Bitstream DD
             </span>
           </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Read-only hardware gate & streaming SHA-256
+          </p>
         </div>
 
-        {/* KPI 4: Evidence Carving & Recovery */}
-        <div
-          onClick={() => onNavigate && onNavigate('recovery')}
-          className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-purple-300 cursor-pointer transition-all group"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Carving & Recovery</span>
-            <Search className="w-4 h-4 text-purple-600 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-2">
-            TSK & Carve
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-            <span>Multi-format validation</span>
-            <span className="text-purple-600 font-medium group-hover:underline flex items-center gap-0.5">
-              Recover <ArrowRight className="w-3 h-3" />
+        <div className="space-y-1 md:border-l md:border-slate-200 md:dark:border-[#26313D] md:pl-4">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 block">
+            Sanitization Engine
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-bold font-mono text-slate-900 dark:text-slate-100">
+              NIST SP 800-88
             </span>
           </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Clear, Purge, Cryptographic Erase verified
+          </p>
         </div>
       </div>
 
-      {/* Active Cases Quick Access */}
-      <div className="bg-white border border-slate-200 rounded-md shadow-2xs overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+      {/* 4. Quick Action Shortcuts Ribbon */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 mr-1">Workstation Operations:</span>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('device-explorer')}
+          startContent={<HardDrive className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Device Explorer
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('acquisition')}
+          startContent={<Download className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Disk Acquisition
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('recovery')}
+          startContent={<Search className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Forensics & Recovery
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('drive-eraser')}
+          startContent={<Cpu className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Drive Sanitization
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('integrity')}
+          startContent={<FileCheck className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Hash Verification
+        </Button>
+        <Button
+          size="sm"
+          variant="flat"
+          onPress={() => onNavigate && onNavigate('audit-logs')}
+          startContent={<ClipboardList className="w-3.5 h-3.5" />}
+          className="text-xs font-medium h-7 bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-[#26313D]"
+        >
+          Audit Ledger
+        </Button>
+      </div>
+
+      {/* 5. Main Workspace: Primary Data Table (Direct on Canvas, No Wrapper Card) */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-indigo-600" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Recent Forensic Cases
-            </h3>
+            <Briefcase className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+              Recent Investigation Cases
+            </h2>
           </div>
           {onNavigate && (
-            <button
-              onClick={() => onNavigate('cases')}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+            <Button
+              size="sm"
+              variant="light"
+              onPress={() => onNavigate('cases')}
+              endContent={<ArrowRight className="w-3.5 h-3.5" />}
+              className="text-xs font-semibold text-slate-700 dark:text-slate-300 h-7"
             >
-              <span>View All Cases</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
+              View All Cases
+            </Button>
           )}
         </div>
 
-        {cases.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
-            {loadingCases ? 'Loading cases...' : 'No forensic investigation cases registered.'}
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {cases.slice(0, 4).map((c) => (
-              <div
-                key={c.case_id}
-                onClick={() => onNavigate && onNavigate('cases')}
-                className="p-4 hover:bg-slate-50/80 cursor-pointer transition-colors flex items-center justify-between gap-4"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      {c.case_reference}
-                    </span>
-                    <h4 className="text-xs font-semibold text-slate-800 truncate">{c.title}</h4>
-                    <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded capitalize ${
-                        c.status === 'open'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : c.status === 'in_progress'
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : c.status === 'completed'
-                          ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}
+        <Table
+          aria-label="Recent investigation cases table"
+          classNames={{
+            base: 'min-w-full',
+            table: 'min-w-full text-xs',
+            thead: '[&>tr]:first:rounded-none',
+            th: 'bg-slate-100 dark:bg-[#1B2530] text-slate-700 dark:text-slate-300 font-semibold text-[11px] uppercase tracking-wider py-2.5 px-3 border-b border-slate-200 dark:border-[#26313D]',
+            td: 'py-2.5 px-3 border-b border-slate-200 dark:border-[#26313D] text-slate-800 dark:text-slate-200',
+            wrapper: 'bg-transparent shadow-none p-0 border border-slate-200 dark:border-[#26313D] rounded-sm',
+          }}
+        >
+          <TableHeader>
+            <TableColumn>CASE IDENTIFIER</TableColumn>
+            <TableColumn>TITLE</TableColumn>
+            <TableColumn>INVESTIGATOR</TableColumn>
+            <TableColumn>STATUS</TableColumn>
+            <TableColumn>REGISTERED</TableColumn>
+            <TableColumn align="end">ACTION</TableColumn>
+          </TableHeader>
+          <TableBody
+            emptyContent={loadingCases ? 'Loading cases...' : 'No investigation cases registered in workstation.'}
+          >
+            {cases.map((c) => (
+              <TableRow key={c.case_id} className="hover:bg-slate-50 dark:hover:bg-[#151C24] transition-colors">
+                <TableCell className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                  {c.case_reference}
+                </TableCell>
+                <TableCell className="font-medium max-w-xs truncate">
+                  {c.title}
+                </TableCell>
+                <TableCell className="text-slate-600 dark:text-slate-400">
+                  {c.lead_investigator}
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    className={`font-mono text-[10px] font-bold uppercase h-5 ${
+                      c.status === 'open' || c.status === 'in_progress'
+                        ? 'bg-slate-100 dark:bg-[#26313D] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                        : 'bg-slate-100 dark:bg-[#151C24] text-slate-500 border border-slate-200 dark:border-[#26313D]'
+                    }`}
+                  >
+                    {c.status}
+                  </Chip>
+                </TableCell>
+                <TableCell className="font-mono text-[11px] text-slate-500">
+                  {new Date(c.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell>
+                  {onNavigate && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() => onNavigate('cases')}
+                      className="text-xs font-semibold text-slate-700 dark:text-slate-300 h-6 px-2"
                     >
-                      {c.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1 truncate">{c.description || 'No description provided.'}</p>
-                </div>
-
-                <div className="text-right shrink-0 text-[11px] text-slate-400 font-mono">
-                  <div>Lead: {c.lead_investigator}</div>
-                  <div className="text-[10px] text-slate-400">
-                    Created: {new Date(c.created_at).toLocaleDateString()}
-                  </div>
-                </div>
-              </div>
+                      Inspect
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
             ))}
-          </div>
-        )}
+          </TableBody>
+        </Table>
       </div>
 
-      {/* Core Architectural Pillars */}
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
-          Architecture & System Modules (Steps 10 – 13)
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Pillar 1: Drive Eraser */}
-          <div
-            onClick={() => onNavigate && onNavigate('drive-eraser')}
-            className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-slate-300 cursor-pointer transition-colors"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-slate-800">
-                <Cpu className="w-4 h-4 text-slate-600" />
-                <h4 className="text-xs font-semibold">Drive Eraser</h4>
-              </div>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                Step 10
-              </span>
+      <Divider className="my-6 bg-slate-200 dark:bg-[#26313D]" />
+
+      {/* 6. Forensic Subsystems & Invariants Status (Aligned Telemetry Rows, No Cards) */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+            Workstation Subsystems & Safety Invariants
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs border border-slate-200 dark:border-[#26313D] p-4 rounded-sm bg-slate-50/50 dark:bg-[#151C24]/30">
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+              Write-Blocking Gate
+            </span>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              Hardware Interlock Active
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Block sanitization, NIST SP 800-88 compliance, and hardware ATA/NVMe sanitize interlocks.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Direct physical bitstream imaging enforces read-only OS driver flags.
             </p>
           </div>
 
-          {/* Pillar 2: Forensic Acquisition */}
-          <div
-            onClick={() => onNavigate && onNavigate('acquisition')}
-            className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-slate-300 cursor-pointer transition-colors"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-slate-800">
-                <Download className="w-4 h-4 text-blue-600" />
-                <h4 className="text-xs font-semibold">Disk Acquisition</h4>
-              </div>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                Step 11
-              </span>
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+              Cryptographic Engine
+            </span>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              Constant-Time SHA-256
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Read-only physical bitstream capture, Raw DD output, and streaming SHA-256 verification.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Chunked pre/post acquisition digests with zero memory leakage.
             </p>
           </div>
 
-          {/* Pillar 3: Recovery */}
-          <div
-            onClick={() => onNavigate && onNavigate('recovery')}
-            className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-slate-300 cursor-pointer transition-colors"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-slate-800">
-                <Search className="w-4 h-4 text-purple-600" />
-                <h4 className="text-xs font-semibold">File Recovery</h4>
-              </div>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                Step 12
-              </span>
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+              Evidence Carving
+            </span>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              Multi-Format Signatures
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Forensic image validation, TSK structural traversal, signature carving, and confidence scoring.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Header/footer heuristics with sector alignment & entropy scoring.
             </p>
           </div>
 
-          {/* Pillar 4: Case & Audit Management */}
-          <div
-            onClick={() => onNavigate && onNavigate('cases')}
-            className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs hover:border-slate-300 cursor-pointer transition-colors"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-slate-800">
-                <Briefcase className="w-4 h-4 text-indigo-600" />
-                <h4 className="text-xs font-semibold">Case & Audit</h4>
-              </div>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                Step 13
-              </span>
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+              Audit Immutability
+            </span>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              Tamper-Evident Chain
             </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Cross-module audit chains, tamper-evident custody ledger, and unified forensic cert reporting.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Every operation dispatches an append-only cryptographic event block.
             </p>
           </div>
         </div>

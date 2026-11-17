@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 import { Lock, User, AlertCircle, Shield } from 'lucide-react';
+import {
+  Input,
+  Button,
+  Chip,
+  Divider,
+} from '@heroui/react';
 import { useAuthStore } from '../stores/authStore';
 
 export const LoginPage: React.FC = () => {
@@ -26,87 +32,81 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 font-sans text-slate-800 antialiased">
-      <div className="max-w-sm w-full bg-white border border-slate-200 rounded-lg p-7 shadow-xs">
+    <div className="min-h-screen bg-slate-100 dark:bg-[#0B0F14] flex flex-col justify-center items-center p-4 font-sans text-slate-800 dark:text-slate-200 antialiased">
+      <div className="max-w-sm w-full bg-white dark:bg-workstation-panel border border-slate-200 dark:border-workstation-border rounded-xs shadow-2xs p-6 space-y-4">
         {/* Header */}
-        <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-11 h-11 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center mb-3 text-slate-700">
-            <Shield className="w-6 h-6 text-slate-800" />
+        <div className="flex flex-col items-center text-center pb-2">
+          <div className="w-10 h-10 rounded-xs bg-slate-100 dark:bg-workstation-surface border border-slate-200 dark:border-workstation-border flex items-center justify-center mb-3 text-slate-800 dark:text-slate-200">
+            <Shield className="w-5 h-5" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">
-            LOCARD<span className="text-sky-600">X</span>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            LOCARDX
           </h1>
-          <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mt-0.5">
+          <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
             Forensic Workstation Access
           </p>
-          <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-600 border border-slate-200">
+          <Chip
+            size="sm"
+            variant="flat"
+            className="mt-2 text-[10px] h-5 font-mono bg-slate-100 dark:bg-workstation-surface text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-workstation-border rounded-xs"
+          >
             Closed Authentication
-          </div>
+          </Chip>
         </div>
 
-        {error && (
-          <div className="mb-4 p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start space-x-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {/* Username */}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Username
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-slate-400 pointer-events-none">
-                <User className="w-3.5 h-3.5" />
-              </span>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoComplete="username"
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 focus:bg-white transition-colors"
-                placeholder="Operator username"
-                disabled={isLoading}
-              />
+        <div>
+          {error && (
+            <div className="mb-4 p-3 rounded-xs bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <span>{error}</span>
             </div>
-          </div>
+          )}
 
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Password
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-slate-400 pointer-events-none">
-                <Lock className="w-3.5 h-3.5" />
-              </span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 focus:bg-white transition-colors"
-                placeholder="••••••••••••"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              size="sm"
+              variant="bordered"
+              label="Username"
+              placeholder="Operator username"
+              value={username}
+              onValueChange={setUsername}
+              isRequired
+              autoComplete="username"
+              isDisabled={isLoading}
+              startContent={<User className="w-4 h-4 text-slate-400" />}
+            />
 
-          <button
-            type="submit"
-            disabled={isLoading || !username || !password}
-            className="w-full mt-2 py-2 px-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-medium rounded text-xs shadow-2xs transition-colors flex justify-center items-center"
-          >
-            {isLoading ? 'Authenticating...' : 'Sign In to Workstation'}
-          </button>
-        </form>
+            <Input
+              size="sm"
+              variant="bordered"
+              type="password"
+              label="Password"
+              placeholder="••••••••••••"
+              value={password}
+              onValueChange={setPassword}
+              isRequired
+              autoComplete="current-password"
+              isDisabled={isLoading}
+              startContent={<Lock className="w-4 h-4 text-slate-400" />}
+            />
 
-        <div className="mt-6 border-t border-slate-100 pt-3 text-center">
-          <p className="text-[10px] text-slate-400 leading-normal">
+            <Button
+              type="submit"
+              color="primary"
+              size="md"
+              isLoading={isLoading}
+              isDisabled={isLoading || !username || !password}
+              className="w-full mt-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold rounded-xs"
+            >
+              Sign In to Workstation
+            </Button>
+          </form>
+        </div>
+
+        <Divider className="my-1 bg-slate-100 dark:bg-[#26313D]" />
+
+        <div className="pt-2 text-center">
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-normal">
             Closed registration. Contact an Administrator for credential provisioning.
           </p>
         </div>

@@ -211,63 +211,81 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
         current_operation: format!("Scanning up to {} MFT records", records_to_scan),
     });
 
-    let mut record_buf = vec![0u8; mft_record_size as usize];
+    // High-throughput 64 KiB batched MFT record reader (64 records per syscall instead of 1 KiB individual syscalls)
+    let rec_size = mft_record_size as usize;
+    let batch_records = 64usize;
+    let batch_bytes = batch_records * rec_size;
+    let mut batch_buf = vec![0u8; batch_bytes];
 
-    for idx in 0..records_to_scan {
-        let record_offset = match (idx as u64)
+    let mut idx = 0;
+    while idx < records_to_scan {
+        let count_in_batch = (records_to_scan - idx).min(batch_records);
+        let batch_offset = match (idx as u64)
             .checked_mul(mft_record_size)
             .and_then(|o| mft_start.checked_add(o))
         {
             Some(ro) => ro,
             None => break,
         };
-        if record_offset
-            .checked_add(mft_record_size)
-            .is_none_or(|end| end > partition_end)
-        {
+
+        if batch_offset >= partition_end {
             break;
         }
 
-        if reader.seek(SeekFrom::Start(record_offset)).is_err() {
+        let max_available = (partition_end - batch_offset) as usize;
+        let read_bytes = (count_in_batch * rec_size).min(max_available);
+        let actual_records = read_bytes / rec_size;
+        if actual_records == 0 {
             break;
         }
-        if reader.read_exact(&mut record_buf).is_err() {
+
+        if reader.seek(SeekFrom::Start(batch_offset)).is_err() {
+            break;
+        }
+        if reader.read_exact(&mut batch_buf[..actual_records * rec_size]).is_err() {
             break;
         }
 
-        report.entries_examined += 1;
+        for r in 0..actual_records {
+            let record_offset = batch_offset + (r * rec_size) as u64;
+            let record_buf = &batch_buf[r * rec_size..(r + 1) * rec_size];
 
-        if &record_buf[0..4] != b"FILE" {
-            continue;
-        }
+            report.entries_examined += 1;
 
-        let flags = u16::from_le_bytes([record_buf[22], record_buf[23]]);
-        let is_in_use = (flags & 0x0001) != 0;
-        let is_dir = (flags & 0x0002) != 0;
+            if &record_buf[0..4] != b"FILE" {
+                continue;
+            }
 
-        // Recover unallocated / deleted file records (!is_in_use && !is_dir)
-        if !is_in_use && !is_dir {
-            if let Some(entry) =
-                extract_ntfs_mft_file(&record_buf, start_offset, record_offset, cluster_size)
-            {
-                if entry.size_bytes > 0
-                    && entry.source_offset > 0
-                    && entry.source_offset < partition_end
+            let flags = u16::from_le_bytes([record_buf[22], record_buf[23]]);
+            let is_in_use = (flags & 0x0001) != 0;
+            let is_dir = (flags & 0x0002) != 0;
+
+            // Recover unallocated / deleted file records (!is_in_use && !is_dir)
+            if !is_in_use && !is_dir {
+                if let Some(entry) =
+                    extract_ntfs_mft_file(record_buf, start_offset, record_offset, cluster_size)
                 {
-                    report.deleted_candidates += 1;
-                    let file_name = entry.name.clone();
-                    report.files.push(entry);
+                    if entry.size_bytes > 0
+                        && entry.source_offset > 0
+                        && entry.source_offset < partition_end
+                    {
+                        report.deleted_candidates += 1;
+                        let file_name = entry.name.clone();
+                        report.files.push(entry);
 
-                    progress_cb(TskProgressUpdate {
-                        filesystem_type: "NTFS".to_string(),
-                        phase: "Recovering deleted file candidates".to_string(),
-                        entries_examined: report.entries_examined,
-                        deleted_candidates: report.deleted_candidates,
-                        current_operation: format!("Found deleted file: {}", file_name),
-                    });
+                        progress_cb(TskProgressUpdate {
+                            filesystem_type: "NTFS".to_string(),
+                            phase: "Recovering deleted file candidates".to_string(),
+                            entries_examined: report.entries_examined,
+                            deleted_candidates: report.deleted_candidates,
+                            current_operation: format!("Found deleted file: {}", file_name),
+                        });
+                    }
                 }
             }
         }
+
+        idx += actual_records;
 
         if idx > 0 && idx % 256 == 0 {
             progress_cb(TskProgressUpdate {
@@ -277,6 +295,10 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
                 deleted_candidates: report.deleted_candidates,
                 current_operation: format!("Processed {} / {} MFT records", idx, records_to_scan),
             });
+        }
+
+        if actual_records < count_in_batch {
+            break;
         }
     }
 

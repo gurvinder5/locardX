@@ -12,9 +12,17 @@ import {
   FileText,
   RotateCcw,
   Lock,
-  Loader2,
   CheckCircle2,
+  ChevronDown,
 } from 'lucide-react';
+import {
+  Button,
+  Chip,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from '@heroui/react';
 import { Case, CaseSummary, CaseStatus } from '../../types/case';
 
 interface CaseOverviewProps {
@@ -45,199 +53,226 @@ export const CaseOverview: React.FC<CaseOverviewProps> = ({
   return (
     <div className="space-y-5">
       {/* Case Header Banner */}
-      <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
-                {currentCase.case_reference}
-              </span>
-              <h1 className="text-base font-bold text-slate-900">{currentCase.title}</h1>
-
-              {isCurrentlyActive ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  Active App Case
-                </span>
-              ) : onToggleActive ? (
-                <button
-                  onClick={onToggleActive}
-                  disabled={isClosed}
-                  title={isClosed ? 'Cannot set closed case as active' : 'Set as active case for all modules'}
-                  className="text-[11px] font-medium px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-50 disabled:opacity-50 transition-colors"
-                >
-                  Set as Active Case
-                </button>
-              ) : null}
-            </div>
-            <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-              {currentCase.description || 'No description provided.'}
-            </p>
-          </div>
-
-          {/* Status & Report Controls */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {!isClosed ? (
-              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-md">
-                {(['open', 'in_progress', 'completed', 'archived'] as CaseStatus[]).map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => onChangeStatus(st)}
-                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
-                      currentCase.status === st
-                        ? 'bg-white text-slate-900 shadow-2xs border border-slate-200'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {st.replace('_', ' ').toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-300">
-                  <Lock className="w-3 h-3 text-slate-500" />
-                  {currentCase.status.toUpperCase()}
-                </span>
-                {onReopenCase && (
-                  <button
-                    onClick={onReopenCase}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors shadow-2xs"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reopen Case</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            <button
-              onClick={onGenerateReport}
-              disabled={reportLoading || reportSuccess}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all shadow-2xs ${
-                reportSuccess
-                  ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
-                  : reportLoading
-                  ? 'bg-emerald-600 text-white opacity-85 cursor-wait'
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
-              }`}
-              title={reportLoading ? 'Generating forensic report...' : 'Compile and cryptographically sign case report'}
-            >
-              {reportLoading ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Generating Report...</span>
-                </>
-              ) : reportSuccess ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200 animate-pulse" />
-                  <span>Report Generated!</span>
-                </>
-              ) : (
-                <>
-                  <FileCheck className="w-3.5 h-3.5" />
-                  <span>Generate Case Report</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Closed Case Invariant Notice */}
-        {isClosed && (
-          <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200 rounded text-xs text-amber-900 flex items-start gap-2">
-            <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+      <div className="bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] rounded-xs p-5">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-100 dark:border-[#26313D]">
             <div>
-              <strong className="font-semibold">Case Preservation Policy Active:</strong> This case is{' '}
-              <span className="font-mono">{currentCase.status}</span>. In accordance with digital
-              forensic chain-of-custody standards, all evidence, reports, and operation records are
-              preserved immutably. Starting new operations against this case is blocked until an
-              authorized Investigator reopens it.
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <Chip
+                  size="sm"
+                  variant="flat"
+                  className="font-mono text-xs font-bold bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
+                >
+                  {currentCase.case_reference}
+                </Chip>
+                <h1 className="text-base font-bold text-slate-900 dark:text-white">{currentCase.title}</h1>
+
+                {isCurrentlyActive ? (
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    className="text-[11px] font-bold bg-slate-200 dark:bg-[#26313D] text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600"
+                  >
+                    Active App Case
+                  </Chip>
+                ) : onToggleActive ? (
+                  <Button
+                    size="sm"
+                    variant="bordered"
+                    onPress={onToggleActive}
+                    isDisabled={isClosed}
+                    className="h-6 text-[11px] px-2 border-slate-300 dark:border-[#26313D] text-slate-700 dark:text-slate-300"
+                  >
+                    Set as Active Case
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-3xl leading-relaxed">
+                {currentCase.description || 'No description provided.'}
+              </p>
+            </div>
+
+            {/* Status & Report Controls */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Case Status Dropdown */}
+              <Dropdown placement="bottom-end">
+                <DropdownTrigger>
+                  <Button
+                    size="sm"
+                    variant="bordered"
+                    endContent={<ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                    className="h-8 text-xs font-semibold border-slate-300 dark:border-[#26313D] bg-white dark:bg-[#151C24] text-slate-800 dark:text-slate-200"
+                  >
+                    <span className="text-slate-400 text-[11px] font-normal mr-0.5">Status:</span>
+                    <span className="uppercase tracking-wider">{currentCase.status.replace('_', ' ')}</span>
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  aria-label="Change Investigation Status"
+                  selectedKeys={[currentCase.status]}
+                  selectionMode="single"
+                  onAction={(key) => onChangeStatus(key as CaseStatus)}
+                  classNames={{
+                    base: 'bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] shadow-lg rounded-xs',
+                  }}
+                >
+                  <DropdownItem key="open" textValue="Open">
+                    <div className="flex flex-col py-0.5">
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white">OPEN</span>
+                      <span className="text-[10px] text-slate-400">Active evidentiary investigation underway</span>
+                    </div>
+                  </DropdownItem>
+                  <DropdownItem key="in_progress" textValue="In Progress">
+                    <div className="flex flex-col py-0.5">
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white">IN PROGRESS</span>
+                      <span className="text-[10px] text-slate-400">Forensic procedures & imaging active</span>
+                    </div>
+                  </DropdownItem>
+                  <DropdownItem key="completed" textValue="Completed">
+                    <div className="flex flex-col py-0.5">
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white">COMPLETED</span>
+                      <span className="text-[10px] text-slate-400">Analysis completed; ready for sign-off</span>
+                    </div>
+                  </DropdownItem>
+                  <DropdownItem key="archived" textValue="Archived">
+                    <div className="flex flex-col py-0.5">
+                      <span className="font-semibold text-xs text-amber-700 dark:text-amber-400">ARCHIVED</span>
+                      <span className="text-[10px] text-slate-400">Read-only closed evidentiary archive</span>
+                    </div>
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+
+              {isClosed && onReopenCase && (
+                <Button
+                  size="sm"
+                  color="warning"
+                  onPress={onReopenCase}
+                  startContent={<RotateCcw className="w-3.5 h-3.5" />}
+                  className="bg-amber-600 text-white font-semibold h-8 text-xs"
+                >
+                  Reopen Case
+                </Button>
+              )}
+
+              <Button
+                size="sm"
+                color="primary"
+                onPress={onGenerateReport}
+                isLoading={reportLoading}
+                isDisabled={reportLoading || reportSuccess}
+                startContent={
+                  reportSuccess ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-slate-300 animate-pulse" />
+                  ) : !reportLoading ? (
+                    <FileCheck className="w-3.5 h-3.5" />
+                  ) : undefined
+                }
+                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold h-8 shadow-xs text-xs"
+              >
+                {reportLoading
+                  ? 'Generating Report...'
+                  : reportSuccess
+                  ? 'Report Generated!'
+                  : 'Generate Case Report'}
+              </Button>
             </div>
           </div>
-        )}
 
-        {/* Case Metadata Badges */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
-            <User className="w-3.5 h-3.5 text-slate-400" />
-            <span>
-              Investigator: <strong className="text-slate-800">{currentCase.lead_investigator}</strong>
-            </span>
+          {/* Closed Case Invariant Notice */}
+          {isClosed && (
+            <div className="mt-3 p-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold">Case Preservation Policy Active:</strong> This case is{' '}
+                <span className="font-mono">{currentCase.status}</span>. In accordance with digital
+                forensic chain-of-custody standards, all evidence, reports, and operation records are
+                preserved immutably. Starting new operations against this case is blocked until an
+                authorized Investigator reopens it.
+              </div>
+            </div>
+          )}
+
+          {/* Case Metadata Badges */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 text-xs text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-2">
+              <User className="w-3.5 h-3.5 text-slate-400" />
+              <span>
+                Investigator: <strong className="text-slate-900 dark:text-white">{currentCase.lead_investigator}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>
+                Created: <strong className="text-slate-900 dark:text-white">{new Date(currentCase.created_at).toLocaleDateString()}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>
+                Updated: <strong className="text-slate-900 dark:text-white">{new Date(currentCase.updated_at).toLocaleTimeString()}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
+              <span>
+                Audit Chain:{' '}
+                <strong className="text-slate-900 dark:text-white font-mono">
+                  {summary?.audit_chain_status || 'Verified'}
+                </strong>
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <span>
-              Created: <strong className="text-slate-800">{new Date(currentCase.created_at).toLocaleDateString()}</strong>
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
-            <span>
-              Updated: <strong className="text-slate-800">{new Date(currentCase.updated_at).toLocaleTimeString()}</strong>
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
-              Audit Chain:{' '}
-              <strong className="text-emerald-700 font-mono">
-                {summary?.audit_chain_status || 'Verified'}
-              </strong>
-            </span>
-          </div>
-        </div>
       </div>
 
-      {/* KPI Metrics Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {/* Inline KPI Metric Strip */}
+      <div className="border border-slate-200 dark:border-[#26313D] rounded-xs bg-white dark:bg-[#151C24] divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-[#26313D] grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 min-w-0">
         {/* Operations */}
-        <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Operations</span>
-            <Activity className="w-4 h-4 text-indigo-600" />
+            <Activity className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="text-xl font-bold text-slate-900">{summary?.operation_count ?? 0}</div>
-          <span className="text-[10px] text-slate-400">Linked forensic procedures</span>
+          <div className="text-xl font-bold text-slate-900 dark:text-white">{summary?.operation_count ?? 0}</div>
+          <span className="text-[10px] text-slate-400">Linked procedures</span>
         </div>
 
         {/* Evidence */}
-        <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Evidence Items</span>
-            <HardDrive className="w-4 h-4 text-sky-600" />
+            <HardDrive className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="text-xl font-bold text-slate-900">{summary?.evidence_count ?? 0}</div>
-          <span className="text-[10px] text-slate-400">Media, DD images, datasets</span>
+          <div className="text-xl font-bold text-slate-900 dark:text-white">{summary?.evidence_count ?? 0}</div>
+          <span className="text-[10px] text-slate-400">Media, DD images</span>
         </div>
 
         {/* Recovered Files */}
-        <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Carved Files</span>
-            <Search className="w-4 h-4 text-emerald-600" />
+            <Search className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="text-xl font-bold text-slate-900">{summary?.recovered_file_count ?? 0}</div>
-          <span className="text-[10px] text-slate-400">Reconstructed candidates</span>
+          <div className="text-xl font-bold text-slate-900 dark:text-white">{summary?.recovered_file_count ?? 0}</div>
+          <span className="text-[10px] text-slate-400">Reconstructed</span>
         </div>
 
         {/* Sanitization */}
-        <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Sanitizations</span>
-            <Layers className="w-4 h-4 text-amber-600" />
+            <Layers className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="text-xl font-bold text-slate-900">{summary?.erasure_count ?? 0}</div>
-          <span className="text-[10px] text-slate-400">Drive and file erasures</span>
+          <div className="text-xl font-bold text-slate-900 dark:text-white">{summary?.erasure_count ?? 0}</div>
+          <span className="text-[10px] text-slate-400">Drive & file erasures</span>
         </div>
 
         {/* Reports */}
-        <div className="bg-white border border-slate-200 rounded-md p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+        <div className="p-4">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider">Reports</span>
-            <FileText className="w-4 h-4 text-purple-600" />
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="text-xl font-bold text-slate-900">{summary?.report_count ?? 0}</div>
+          <div className="text-xl font-bold text-slate-900 dark:text-white">{summary?.report_count ?? 0}</div>
           <span className="text-[10px] text-slate-400">Cryptographically signed</span>
         </div>
       </div>

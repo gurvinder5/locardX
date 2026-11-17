@@ -9,6 +9,12 @@ import {
   FileCheck,
   Eye,
 } from 'lucide-react';
+import {
+  Button,
+  Chip,
+  Tabs,
+  Tab,
+} from '@heroui/react';
 import { CaseForensicReport, CaseReportSummary } from '../../types/case';
 
 interface CaseReportsViewProps {
@@ -24,7 +30,7 @@ export const CaseReportsView: React.FC<CaseReportsViewProps> = ({
   onViewReport,
   onVerifyReport,
 }) => {
-  const [activeTab, setActiveTab] = useState<'markdown' | 'certificate'>('markdown');
+  const [activeTab, setActiveTab] = useState<string>('markdown');
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
@@ -52,156 +58,160 @@ export const CaseReportsView: React.FC<CaseReportsViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Reports List */}
-      <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between">
+      <div className="bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] p-4 space-y-3 rounded-xs">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#26313D]">
           <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-purple-600" />
-            <h3 className="text-xs font-semibold text-slate-800 uppercase tracking-wider">
+            <FileText className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+            <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
               Generated Case Reports
             </h3>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+            <Chip
+              size="sm"
+              variant="flat"
+              className="text-[10px] h-5 font-mono bg-slate-100 dark:bg-[#1B2530] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#26313D]"
+            >
               {reports.length}
-            </span>
+            </Chip>
           </div>
         </div>
 
-        {reports.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-400">
-            No formal reports generated for this case yet. Click &quot;Generate Case Report&quot; on the overview tab to compile an evidentiary report.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {reports.map((r) => {
-              const isSelected = activeReport?.report_id === r.report_id;
-              return (
-                <div
-                  key={r.report_id}
-                  className={`py-3 px-2 flex items-center justify-between gap-3 rounded transition-colors ${
-                    isSelected ? 'bg-purple-50/50' : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900">{r.title}</span>
-                      <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                        {r.report_type}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400">
-                      <span>By: {r.generated_by}</span>
-                      <span>&bull;</span>
-                      <span>{new Date(r.generated_at).toLocaleString()}</span>
-                      <span>&bull;</span>
-                      <span className="font-mono">Digest: {r.report_digest.slice(0, 16)}...</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => onViewReport(r.report_id)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+        <div>
+          {reports.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              No formal reports generated for this case yet. Click &quot;Generate Case Report&quot; on the overview tab to compile an evidentiary report.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-[#26313D]">
+              {reports.map((r) => {
+                const isSelected = activeReport?.report_id === r.report_id;
+                return (
+                  <div
+                    key={r.report_id}
+                    className={`py-3 px-3 flex items-center justify-between gap-3 rounded-lg transition-colors ${
+                      isSelected
+                        ? 'bg-slate-100 dark:bg-[#1B2530]'
+                        : 'hover:bg-slate-50 dark:hover:bg-[#1B2530]/50'
+                    }`}
                   >
-                    <Eye className="w-3.5 h-3.5 text-purple-600" />
-                    <span>View</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">{r.title}</span>
+                        <Chip size="sm" variant="flat" className="text-[9px] uppercase font-bold tracking-wider bg-slate-100 dark:bg-[#26313D] text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
+                          {r.report_type}
+                        </Chip>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
+                        <span>By: {r.generated_by}</span>
+                        <span>&bull;</span>
+                        <span>{new Date(r.generated_at).toLocaleString()}</span>
+                        <span>&bull;</span>
+                        <span>Digest: {r.report_digest.slice(0, 16)}...</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="bordered"
+                      onPress={() => onViewReport(r.report_id)}
+                      startContent={<Eye className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />}
+                      className="border-slate-200 dark:border-[#26313D] text-slate-700 dark:text-slate-300 text-xs font-semibold h-8"
+                    >
+                      View
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Active Report Inspector */}
       {activeReport && (
-        <div className="bg-white border border-slate-200 rounded-md p-5 shadow-2xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+        <div className="bg-white dark:bg-[#151C24] border border-slate-200 dark:border-[#26313D] p-4 space-y-4 rounded-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-[#26313D]">
             <div>
               <div className="flex items-center gap-2">
-                <FileCheck className="w-4 h-4 text-emerald-600" />
-                <h4 className="text-sm font-bold text-slate-900">{activeReport.title}</h4>
+                <FileCheck className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{activeReport.title}</h4>
               </div>
               <p className="text-[11px] text-slate-400 font-mono mt-0.5">
                 Report ID: {activeReport.report_id} &bull; Generated: {new Date(activeReport.integrity.generated_at).toLocaleString()}
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleVerify}
-                disabled={verifying}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-2xs"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{verifying ? 'Checking...' : 'Verify Cryptographic Digest'}</span>
-              </button>
-            </div>
+            <Button
+              size="sm"
+              color="primary"
+              onPress={handleVerify}
+              isLoading={verifying}
+              startContent={!verifying && <ShieldCheck className="w-3.5 h-3.5 text-slate-300" />}
+              className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-semibold h-8 shadow-xs"
+            >
+              {verifying ? 'Checking...' : 'Verify Cryptographic Digest'}
+            </Button>
           </div>
 
-          {/* Verification Banner */}
-          {verificationResult !== null && (
-            <div
-              className={`p-3 rounded-md flex items-center justify-between text-xs border ${
-                verificationResult
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  : 'bg-rose-50 text-rose-800 border-rose-200'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {verificationResult ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-rose-600" />
-                )}
-                <span>
-                  {verificationResult
-                    ? 'Report digest verified! Exact match with canonical SHA-256 calculation. Zero tampering detected.'
-                    : 'INTEGRITY ALERT: Report digest mismatch! Substantive fields do not match canonical digest.'}
+          <div className="space-y-4">
+            {/* Verification Banner */}
+            {verificationResult !== null && (
+              <div
+                className={`p-3 rounded-lg flex items-center justify-between text-xs border ${
+                  verificationResult
+                    ? 'bg-slate-100 dark:bg-[#1B2530] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700'
+                    : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {verificationResult ? (
+                    <CheckCircle2 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                  )}
+                  <span>
+                    {verificationResult
+                      ? 'Report digest verified! Exact match with canonical SHA-256 calculation. Zero tampering detected.'
+                      : 'INTEGRITY ALERT: Report digest mismatch! Substantive fields do not match canonical digest.'}
+                  </span>
+                </div>
+                <span className="font-mono text-[10px]">
+                  {activeReport.integrity.report_digest.slice(0, 24)}...
                 </span>
               </div>
-              <span className="font-mono text-[10px]">
-                {activeReport.integrity.report_digest.slice(0, 24)}...
-              </span>
-            </div>
-          )}
+            )}
 
-          {/* Tab Navigation */}
-          <div className="flex items-center justify-between border-b border-slate-200">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setActiveTab('markdown')}
-                className={`px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors ${
-                  activeTab === 'markdown'
-                    ? 'border-purple-600 text-purple-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+            {/* Tab Navigation & Copy Control */}
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#26313D] pb-1">
+              <Tabs
+                selectedKey={activeTab}
+                onSelectionChange={(key) => setActiveTab(String(key))}
+                size="sm"
+                variant="underlined"
+                classNames={{
+                  cursor: 'bg-slate-900 dark:bg-white',
+                  tab: 'text-xs font-semibold text-slate-500 dark:text-slate-400 data-[selected=true]:text-slate-900 dark:data-[selected=true]:text-white',
+                }}
               >
-                Markdown Presentation
-              </button>
-              <button
-                onClick={() => setActiveTab('certificate')}
-                className={`px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors ${
-                  activeTab === 'certificate'
-                    ? 'border-purple-600 text-purple-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+                <Tab key="markdown" title="Markdown Presentation" />
+                <Tab key="certificate" title="Evidentiary Text Certificate" />
+              </Tabs>
+
+              <Button
+                size="sm"
+                variant="light"
+                onPress={() => handleCopy(JSON.stringify(activeReport, null, 2))}
+                startContent={copied ? <Check className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" /> : <Copy className="w-3.5 h-3.5" />}
+                className="text-[11px] text-slate-500 dark:text-slate-400 h-7"
               >
-                Evidentiary Text Certificate
-              </button>
+                {copied ? 'Copied JSON' : 'Copy JSON'}
+              </Button>
             </div>
 
-            <button
-              onClick={() => handleCopy(JSON.stringify(activeReport, null, 2))}
-              className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors py-1"
-            >
-              {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-              <span>{copied ? 'Copied JSON' : 'Copy JSON'}</span>
-            </button>
-          </div>
-
-          {/* Report Viewer */}
-          <div className="bg-slate-50 border border-slate-200 rounded-md p-4 max-h-[500px] overflow-y-auto font-mono text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
-            {activeTab === 'markdown' ? (
-              <div>
-                {`# ${activeReport.title}
+            {/* Report Viewer */}
+            <div className="bg-slate-50 dark:bg-[#10161D] border border-slate-200 dark:border-[#26313D] rounded-lg p-4 max-h-[500px] overflow-y-auto font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+              {activeTab === 'markdown' ? (
+                <div>
+                  {`# ${activeReport.title}
 Case Reference: ${activeReport.case_info.case_reference}
 Lead Investigator: ${activeReport.case_info.lead_investigator}
 Case Status: ${activeReport.case_info.status}
@@ -258,10 +268,10 @@ Total Audit Sequence Count: ${activeReport.audit_integrity.total_events}
 Audit Root Hash: ${activeReport.audit_integrity.audit_root_hash}
 Canonical Report Digest: ${activeReport.integrity.report_digest}
 `}
-              </div>
-            ) : (
-              <div>
-                {`================================================================================
+                </div>
+              ) : (
+                <div>
+                  {`================================================================================
                LOCARDX FORENSIC INVESTIGATION CERTIFICATE                      
 ================================================================================
 REPORT ID:           ${activeReport.report_id}
@@ -279,8 +289,9 @@ Custody Events:      ${activeReport.custody_timeline.length}
 AUDIT INTEGRITY:     ${activeReport.audit_integrity.is_valid ? 'CRYPTOGRAPHICALLY VERIFIED' : 'FAILED'}
 CANONICAL DIGEST:    ${activeReport.integrity.report_digest}
 ================================================================================`}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
