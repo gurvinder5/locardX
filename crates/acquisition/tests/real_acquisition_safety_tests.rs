@@ -43,6 +43,7 @@ fn test_a_physicaldrive1_successfully_acquired_to_image_file() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_a"),
         )
@@ -151,6 +152,7 @@ fn test_e_exact_size_final_chunk() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_e"),
         )
@@ -181,6 +183,7 @@ fn test_f_partial_final_chunk() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_f"),
         )
@@ -210,6 +213,7 @@ fn test_g_read_error_causes_acquisition_failure() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_g"),
         )
@@ -249,6 +253,7 @@ fn test_h_failed_acquisition_removes_only_incomplete_target() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_h"),
         )
@@ -305,6 +310,7 @@ fn test_j_hash_is_calculated_from_bytes_actually_acquired() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_j"),
         )
@@ -340,6 +346,7 @@ fn test_k_device_size_changes_trigger_toctou_failure() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_k"),
         )
@@ -374,6 +381,7 @@ fn test_l_usb_device_removal_during_acquisition() {
         .create_plan(
             r"\\.\PhysicalDrive1",
             dest_file.to_str().unwrap(),
+            None,
             true,
             Some("examiner_l"),
         )

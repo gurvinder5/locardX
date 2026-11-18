@@ -194,6 +194,7 @@ pub fn create_acquisition_plan_handler(
         .create_plan(
             &request.source_device_id,
             &request.destination_path,
+            request.chunk_size_bytes,
             request.allow_overwrite.unwrap_or(false),
             actor_id.as_deref(),
         )

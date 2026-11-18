@@ -80,6 +80,20 @@ pub struct AcquisitionPlan {
     pub created_at: String,
 }
 
+/// Diagnostic performance metrics recorded during forensic acquisition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AcquisitionPerformanceStats {
+    pub chunk_size_bytes: usize,
+    pub chunks_processed: u64,
+    pub read_duration_ms: u64,
+    pub hash_duration_ms: u64,
+    pub write_duration_ms: u64,
+    pub total_duration_ms: u64,
+    pub effective_throughput_mbps: f64,
+    pub read_errors_encountered: u32,
+    pub write_errors_encountered: u32,
+}
+
 /// Real-time progress telemetry emitted during acquisition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcquisitionProgress {
@@ -91,6 +105,8 @@ pub struct AcquisitionProgress {
     pub elapsed_seconds: f64,
     pub eta_seconds: Option<f64>,
     pub stage: String,
+    #[serde(default)]
+    pub performance_stats: Option<AcquisitionPerformanceStats>,
 }
 
 /// Verified filesystem outcome of partial-artifact cleanup after a failed or cancelled acquisition.
@@ -188,7 +204,7 @@ impl std::str::FromStr for AcquisitionStatus {
 }
 
 /// Structured diagnostic telemetry recorded on acquisition completion or failure.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AcquisitionDiagnostics {
     pub source_device_id: String,
     pub source_size_bytes: u64,
@@ -200,6 +216,8 @@ pub struct AcquisitionDiagnostics {
     pub underlying_error: Option<String>,
     pub win32_error_code: Option<u32>,
     pub final_status: String,
+    #[serde(default)]
+    pub performance_stats: Option<AcquisitionPerformanceStats>,
 }
 
 /// Explicit forensic acquisition failure reasons.
@@ -352,6 +370,8 @@ pub struct AcquisitionResult {
     pub failure_reason: Option<AcquisitionFailureReason>,
     #[serde(default)]
     pub diagnostics: Option<AcquisitionDiagnostics>,
+    #[serde(default)]
+    pub performance_stats: Option<AcquisitionPerformanceStats>,
     /// Filesystem-verified cleanup outcome. Never inferred from a delete attempt alone.
     #[serde(default)]
     pub cleanup_status: Option<ArtifactCleanupStatus>,
