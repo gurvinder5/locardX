@@ -50,7 +50,9 @@ impl SignatureDetector {
             if !sigs.is_empty() {
                 for sig in sigs {
                     let magic = &sig.header_magic;
-                    if pos + magic.len() <= buf_len && &buffer[pos..pos + magic.len()] == magic.as_slice() {
+                    if pos + magic.len() <= buf_len
+                        && &buffer[pos..pos + magic.len()] == magic.as_slice()
+                    {
                         let file_start_offset = if pos >= sig.header_offset {
                             base_offset + (pos - sig.header_offset) as u64
                         } else if base_offset >= sig.header_offset as u64 {

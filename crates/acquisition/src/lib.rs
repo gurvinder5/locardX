@@ -14,9 +14,9 @@ pub use engine::{
 };
 pub use hasher::StreamingSha256Hasher;
 pub use models::{
-    AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionDiagnostics, AcquisitionFailureReason,
-    AcquisitionPerformanceStats, AcquisitionPlan, AcquisitionProgress, AcquisitionRecordDto,
-    AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
+    AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionDiagnostics,
+    AcquisitionFailureReason, AcquisitionPerformanceStats, AcquisitionPlan, AcquisitionProgress,
+    AcquisitionRecordDto, AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
 };
 pub use platform::{
     AcquisitionSourceReader, CompositeAcquisitionReader, FaultInjectableAcquisitionReader,

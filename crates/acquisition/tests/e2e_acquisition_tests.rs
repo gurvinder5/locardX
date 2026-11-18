@@ -492,7 +492,9 @@ fn test_12_startup_crash_recovery_sweep() {
 
 #[test]
 fn test_13_validate_chunk_sizes_and_defaults() {
-    use locardx_acquisition::{validate_chunk_size, DEFAULT_CHUNK_SIZE_BYTES, SUPPORTED_CHUNK_SIZES};
+    use locardx_acquisition::{
+        validate_chunk_size, DEFAULT_CHUNK_SIZE_BYTES, SUPPORTED_CHUNK_SIZES,
+    };
 
     // None defaults to 1 MiB
     assert_eq!(validate_chunk_size(None).unwrap(), DEFAULT_CHUNK_SIZE_BYTES);
@@ -576,19 +578,43 @@ fn test_15_chunk_size_invariance_and_diagnostics() {
     let dest_4m = temp_dir.path().join("img_4m.raw");
 
     let plan_512k = service
-        .create_plan(r"\\.\PhysicalDrive1", dest_512k.to_str().unwrap(), Some(512 * 1024), true, None)
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_512k.to_str().unwrap(),
+            Some(512 * 1024),
+            true,
+            None,
+        )
         .unwrap();
-    let res_512k = service.execute_acquisition("op-invar-512k", &plan_512k, None).unwrap();
+    let res_512k = service
+        .execute_acquisition("op-invar-512k", &plan_512k, None)
+        .unwrap();
 
     let plan_1m = service
-        .create_plan(r"\\.\PhysicalDrive1", dest_1m.to_str().unwrap(), Some(1024 * 1024), true, None)
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_1m.to_str().unwrap(),
+            Some(1024 * 1024),
+            true,
+            None,
+        )
         .unwrap();
-    let res_1m = service.execute_acquisition("op-invar-1m", &plan_1m, None).unwrap();
+    let res_1m = service
+        .execute_acquisition("op-invar-1m", &plan_1m, None)
+        .unwrap();
 
     let plan_4m = service
-        .create_plan(r"\\.\PhysicalDrive1", dest_4m.to_str().unwrap(), Some(4 * 1024 * 1024), true, None)
+        .create_plan(
+            r"\\.\PhysicalDrive1",
+            dest_4m.to_str().unwrap(),
+            Some(4 * 1024 * 1024),
+            true,
+            None,
+        )
         .unwrap();
-    let res_4m = service.execute_acquisition("op-invar-4m", &plan_4m, None).unwrap();
+    let res_4m = service
+        .execute_acquisition("op-invar-4m", &plan_4m, None)
+        .unwrap();
 
     // Invariance: All 3 acquisitions of identical source MUST yield bit-for-bit identical hashes
     assert_eq!(res_512k.image_sha256, res_1m.image_sha256);

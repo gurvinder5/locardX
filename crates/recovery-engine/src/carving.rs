@@ -62,9 +62,7 @@ fn is_plausible_header(file_type: &FileType, data: &[u8]) -> bool {
         FileType::SevenZip => {
             data.len() >= 6 && &data[0..6] == [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]
         }
-        FileType::Rar => {
-            data.len() >= 6 && &data[0..6] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]
-        }
+        FileType::Rar => data.len() >= 6 && &data[0..6] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07],
         FileType::Sqlite => data.len() >= 16 && &data[0..16] == b"SQLite format 3\0",
         FileType::Rtf => data.starts_with(b"{\\rtf"),
         FileType::Mp4 => data.len() >= 8 && &data[4..8] == b"ftyp",
@@ -206,7 +204,8 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                         if file.seek(SeekFrom::Start(candidate.global_offset)).is_ok()
                             && file.read_exact(&mut probe_buf).is_ok()
                         {
-                            let probe_parsed = parse_file_structure(&candidate.file_type, &probe_buf);
+                            let probe_parsed =
+                                parse_file_structure(&candidate.file_type, &probe_buf);
                             if let Some(ref p) = probe_parsed {
                                 let exact_size = (p.detected_size as usize)
                                     .min(max_read)
@@ -222,9 +221,11 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                                     if file.seek(SeekFrom::Start(candidate.global_offset)).is_ok()
                                         && file.read_exact(&mut full_buf).is_ok()
                                     {
-                                        parsed_opt = parse_file_structure(&candidate.file_type, &full_buf);
+                                        parsed_opt =
+                                            parse_file_structure(&candidate.file_type, &full_buf);
                                         if let Some(ref final_p) = parsed_opt {
-                                            let actual = (final_p.detected_size as usize).min(full_buf.len());
+                                            let actual = (final_p.detected_size as usize)
+                                                .min(full_buf.len());
                                             if actual >= candidate.signature.min_size as usize {
                                                 file_payload = Some(full_buf[..actual].to_vec());
                                             }
@@ -270,7 +271,8 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
 
                     if boundary_offset < total_bytes {
                         let lookahead_max = (boundary_offset + 2 * 1024 * 1024).min(total_bytes);
-                        let lookahead_len = (lookahead_max.saturating_sub(boundary_offset)) as usize;
+                        let lookahead_len =
+                            (lookahead_max.saturating_sub(boundary_offset)) as usize;
 
                         if lookahead_len >= cluster_size as usize {
                             let mut lookahead_buf = vec![0u8; lookahead_len];
@@ -279,29 +281,33 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                             {
                                 let mut check_rel = 0usize;
                                 while check_rel + cluster_size as usize <= lookahead_len {
-                                    let cluster_buf =
-                                        &lookahead_buf[check_rel..check_rel + cluster_size as usize];
+                                    let cluster_buf = &lookahead_buf
+                                        [check_rel..check_rel + cluster_size as usize];
                                     let check_offset = boundary_offset + check_rel as u64;
 
                                     if let Some(footer) = &candidate.signature.footer_magic {
-                                        if cluster_buf.windows(footer.len()).any(|w| w == footer.as_slice())
+                                        if cluster_buf
+                                            .windows(footer.len())
+                                            .any(|w| w == footer.as_slice())
                                         {
-                                            let f1 = crate::fragmentation::fragment::create_fragment(
-                                                "temp-1",
-                                                0,
-                                                candidate.global_offset,
-                                                actual_size,
-                                                crate::models::FragmentType::Header,
-                                                0.8,
-                                            );
-                                            let f2 = crate::fragmentation::fragment::create_fragment(
-                                                "temp-1",
-                                                1,
-                                                check_offset,
-                                                cluster_size,
-                                                crate::models::FragmentType::Trailer,
-                                                0.8,
-                                            );
+                                            let f1 =
+                                                crate::fragmentation::fragment::create_fragment(
+                                                    "temp-1",
+                                                    0,
+                                                    candidate.global_offset,
+                                                    actual_size,
+                                                    crate::models::FragmentType::Header,
+                                                    0.8,
+                                                );
+                                            let f2 =
+                                                crate::fragmentation::fragment::create_fragment(
+                                                    "temp-1",
+                                                    1,
+                                                    check_offset,
+                                                    cluster_size,
+                                                    crate::models::FragmentType::Trailer,
+                                                    0.8,
+                                                );
                                             let outcome =
                                                 crate::fragmentation::reconstruction::reconstruct_fragments(
                                                     &parsed.file_type,
@@ -396,7 +402,10 @@ pub fn carve_stream<F: FnMut(RecoveryProgress)>(
                     created_at: Utc::now().to_rfc3339(),
                 };
 
-                active_ranges.insert(candidate.global_offset, candidate.global_offset + actual_size);
+                active_ranges.insert(
+                    candidate.global_offset,
+                    candidate.global_offset + actual_size,
+                );
                 recovered_files.push(recovered);
             }
         }

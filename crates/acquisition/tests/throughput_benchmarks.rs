@@ -73,17 +73,20 @@ struct BufferMessage {
 fn benchmark_all_chunk_sizes() {
     let test_data_size: u64 = 64 * 1024 * 1024; // 64 MiB per test
     let chunk_sizes = [
-        512 * 1024,        // 512 KiB
-        1024 * 1024,       // 1 MiB
-        4 * 1024 * 1024,   // 4 MiB
-        8 * 1024 * 1024,   // 8 MiB
-        16 * 1024 * 1024,  // 16 MiB
-        32 * 1024 * 1024,  // 32 MiB
+        512 * 1024,       // 512 KiB
+        1024 * 1024,      // 1 MiB
+        4 * 1024 * 1024,  // 4 MiB
+        8 * 1024 * 1024,  // 8 MiB
+        16 * 1024 * 1024, // 16 MiB
+        32 * 1024 * 1024, // 32 MiB
     ];
 
     println!("\n================================================================================");
     println!("              LOCARDX ACQUISITION PERFORMANCE BENCHMARK SUITE");
-    println!("              Dataset size per run: 64 MiB ({} bytes)", test_data_size);
+    println!(
+        "              Dataset size per run: 64 MiB ({} bytes)",
+        test_data_size
+    );
     println!("================================================================================");
 
     // 1. Benchmark Raw SHA-256 Throughput
@@ -143,7 +146,9 @@ fn benchmark_all_chunk_sizes() {
     println!("\n--- 3. Sequential Acquisition Pipeline (Existing) ---");
     for &chunk_size in &chunk_sizes {
         let temp_dir = tempfile::tempdir().unwrap();
-        let dest_file = temp_dir.path().join(format!("bench_seq_{}k.raw", chunk_size / 1024));
+        let dest_file = temp_dir
+            .path()
+            .join(format!("bench_seq_{}k.raw", chunk_size / 1024));
         let stream = Box::new(SyntheticDeviceStream::new(test_data_size, 64 * 1024));
 
         let start = Instant::now();
@@ -176,7 +181,9 @@ fn benchmark_all_chunk_sizes() {
     println!("\n--- 4. Bounded Producer-Consumer Overlapped Pipeline (Double Buffer) ---");
     for &chunk_size in &chunk_sizes {
         let temp_dir = tempfile::tempdir().unwrap();
-        let dest_file = temp_dir.path().join(format!("bench_pipe_{}k.raw", chunk_size / 1024));
+        let dest_file = temp_dir
+            .path()
+            .join(format!("bench_pipe_{}k.raw", chunk_size / 1024));
         let mut stream = Box::new(SyntheticDeviceStream::new(test_data_size, 64 * 1024));
 
         let start = Instant::now();
@@ -185,7 +192,10 @@ fn benchmark_all_chunk_sizes() {
 
         // 2 pre-allocated reusable buffers: double-buffering
         let (free_tx, free_rx): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = sync_channel(2);
-        let (work_tx, work_rx): (SyncSender<Option<BufferMessage>>, Receiver<Option<BufferMessage>>) = sync_channel(2);
+        let (work_tx, work_rx): (
+            SyncSender<Option<BufferMessage>>,
+            Receiver<Option<BufferMessage>>,
+        ) = sync_channel(2);
 
         // Pre-allocate 2 buffers upfront (zero allocations inside loop)
         free_tx.send(vec![0u8; chunk_size]).unwrap();
@@ -221,7 +231,9 @@ fn benchmark_all_chunk_sizes() {
             }
             hasher.update(&buf[..n]);
             total_read += n as u64;
-            work_tx.send(Some(BufferMessage { buf, valid_len: n })).unwrap();
+            work_tx
+                .send(Some(BufferMessage { buf, valid_len: n }))
+                .unwrap();
         }
         work_tx.send(None).unwrap(); // Signal EOF
 

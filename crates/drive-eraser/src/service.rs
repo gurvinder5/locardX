@@ -237,9 +237,15 @@ impl DriveEraserService {
             }
 
             // Synchronize snapshot with real hardware observations (bus_type, sector_size, etc.)
-            if let Ok(Some(hw_snap)) = self.hardware_provider.probe_device_snapshot(&request.target_device_id) {
+            if let Ok(Some(hw_snap)) = self
+                .hardware_provider
+                .probe_device_snapshot(&request.target_device_id)
+            {
                 snapshot = hw_snap;
-            } else if snapshot.bus_type.is_none() && !assessment.capabilities.interface_bus.is_empty() && assessment.capabilities.interface_bus != "Unknown" {
+            } else if snapshot.bus_type.is_none()
+                && !assessment.capabilities.interface_bus.is_empty()
+                && assessment.capabilities.interface_bus != "Unknown"
+            {
                 snapshot.bus_type = Some(assessment.capabilities.interface_bus.clone());
             }
 
@@ -288,9 +294,15 @@ impl DriveEraserService {
         let capabilities = detect_device_capabilities(&device);
 
         // Synchronize snapshot with hardware provider observations if available
-        if let Ok(Some(hw_snap)) = self.hardware_provider.probe_device_snapshot(&request.target_device_id) {
+        if let Ok(Some(hw_snap)) = self
+            .hardware_provider
+            .probe_device_snapshot(&request.target_device_id)
+        {
             snapshot = hw_snap;
-        } else if snapshot.bus_type.is_none() && !capabilities.interface_bus.is_empty() && capabilities.interface_bus != "Unknown" {
+        } else if snapshot.bus_type.is_none()
+            && !capabilities.interface_bus.is_empty()
+            && capabilities.interface_bus != "Unknown"
+        {
             snapshot.bus_type = Some(capabilities.interface_bus.clone());
         }
 
