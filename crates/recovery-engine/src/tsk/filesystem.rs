@@ -242,7 +242,10 @@ pub fn parse_ntfs_deleted_guided<R: Read + Seek, P: FnMut(TskProgressUpdate)>(
         if reader.seek(SeekFrom::Start(batch_offset)).is_err() {
             break;
         }
-        if reader.read_exact(&mut batch_buf[..actual_records * rec_size]).is_err() {
+        if reader
+            .read_exact(&mut batch_buf[..actual_records * rec_size])
+            .is_err()
+        {
             break;
         }
 

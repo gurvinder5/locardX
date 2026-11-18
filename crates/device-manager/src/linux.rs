@@ -150,9 +150,8 @@ impl DeviceDiscoveryProvider for LinuxDeviceProvider {
         let mounts = Self::parse_mounts();
         let root_device = Self::get_root_device();
 
-        let entries = fs::read_dir(sys_block).map_err(|e| {
-            LocardError::Device(format!("Failed to read /sys/block: {}", e))
-        })?;
+        let entries = fs::read_dir(sys_block)
+            .map_err(|e| LocardError::Device(format!("Failed to read /sys/block: {}", e)))?;
 
         let mut physical_devices = Vec::new();
 
@@ -180,8 +179,8 @@ impl DeviceDiscoveryProvider for LinuxDeviceProvider {
             let capacity_bytes = size_sectors * 512;
 
             // Actual hardware sector size for partition size calculations
-            let hw_sector_size = Self::read_sysfs_u64(&disk_sys_path.join("queue"), "hw_sector_size")
-                .unwrap_or(512);
+            let hw_sector_size =
+                Self::read_sysfs_u64(&disk_sys_path.join("queue"), "hw_sector_size").unwrap_or(512);
 
             // Removable flag
             let removable = Self::read_sysfs_u32(&disk_sys_path, "removable").unwrap_or(0) == 1;
@@ -205,9 +204,9 @@ impl DeviceDiscoveryProvider for LinuxDeviceProvider {
             };
 
             // Check if this disk hosts the root filesystem
-            let is_system_device = root_device.as_ref().map_or(false, |rd| {
-                rd.starts_with(&device_path)
-            });
+            let is_system_device = root_device
+                .as_ref()
+                .map_or(false, |rd| rd.starts_with(&device_path));
 
             // Classification
             let classification = if is_system_device {

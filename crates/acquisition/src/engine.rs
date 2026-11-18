@@ -250,7 +250,8 @@ impl AcquisitionEngine {
                         total_bytes_acquired,
                         "[CLEANUP] Acquisition cancelled by operator. Attempting incomplete artifact removal."
                     );
-                    let _ = work_tx.send(PipelineCommand::Abort(AcquisitionFailureReason::Cancelled));
+                    let _ =
+                        work_tx.send(PipelineCommand::Abort(AcquisitionFailureReason::Cancelled));
                     let cleanup = match writer_handle.join() {
                         Ok(Err((_, cleanup, _, _))) => cleanup,
                         _ => ArtifactCleanupResult::confirmed(destination_path.to_path_buf()),
@@ -430,7 +431,8 @@ impl AcquisitionEngine {
                 return Err(AcquisitionEngineError::from_cleanup(err, cleanup));
             }
             Err(_) => {
-                let cleanup = crate::writer::delete_artifact_verified(&staging_path_for(destination_path));
+                let cleanup =
+                    crate::writer::delete_artifact_verified(&staging_path_for(destination_path));
                 log_cleanup(operation_id, &cleanup);
                 return Err(AcquisitionEngineError::from_cleanup(
                     AcquisitionFailureReason::WriteError("Writer thread panicked".to_string()),

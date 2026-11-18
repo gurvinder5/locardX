@@ -155,7 +155,9 @@ pub fn parse_tiff_stream(data: &[u8]) -> Option<(u64, bool)> {
     }
 
     // Bound TIFF size reasonably
-    let final_len = (ifd_offset + 1024 * 1024).min(data.len() as u64).max(ifd_offset + 128);
+    let final_len = (ifd_offset + 1024 * 1024)
+        .min(data.len() as u64)
+        .max(ifd_offset + 128);
     let is_valid = ifd_offset + 2 <= data.len() as u64;
 
     Some((final_len, is_valid))

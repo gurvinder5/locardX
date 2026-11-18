@@ -244,7 +244,10 @@ impl SanitizationPlanner {
                 }
                 (
                     SanitizationMethod::BlockZeroOverwrite,
-                    MediaType::Hdd | MediaType::UsbRemovable | MediaType::MemoryCard | MediaType::ExternalStorage,
+                    MediaType::Hdd
+                    | MediaType::UsbRemovable
+                    | MediaType::MemoryCard
+                    | MediaType::ExternalStorage,
                     _,
                 ) => true,
                 (

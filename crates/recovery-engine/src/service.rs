@@ -114,7 +114,13 @@ impl RecoveryService {
         }
 
         let fmt = artifact.image_format.to_lowercase();
-        if fmt != "raw" && fmt != "dd" && fmt != "img" && fmt != "bin" && fmt != "iso" && fmt != "image" {
+        if fmt != "raw"
+            && fmt != "dd"
+            && fmt != "img"
+            && fmt != "bin"
+            && fmt != "iso"
+            && fmt != "image"
+        {
             return Err(LocardError::Operation(format!(
                 "Unsupported image format '{}'; raw, dd, img, bin, or iso are accepted",
                 artifact.image_format
@@ -895,7 +901,9 @@ impl RecoveryService {
     ) -> Result<RecoverySourceSnapshot, LocardError> {
         let trimmed = file_path.trim();
         if trimmed.is_empty() {
-            return Err(LocardError::Operation("File path cannot be empty".to_string()));
+            return Err(LocardError::Operation(
+                "File path cannot be empty".to_string(),
+            ));
         }
 
         let p = Path::new(trimmed);
@@ -1072,9 +1080,10 @@ impl RecoveryService {
             ))
         })?;
 
-        let workspace_canonical = strip_verbatim_prefix(&workspace_base.canonicalize().map_err(|e| {
-            LocardError::Operation(format!("Failed to canonicalize workspace directory: {}", e))
-        })?);
+        let workspace_canonical =
+            strip_verbatim_prefix(&workspace_base.canonicalize().map_err(|e| {
+                LocardError::Operation(format!("Failed to canonicalize workspace directory: {}", e))
+            })?);
 
         let cat_folder = rec_file.category.to_string().to_lowercase();
         let target_dir = workspace_canonical.join(&cat_folder);

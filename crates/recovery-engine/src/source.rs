@@ -34,7 +34,8 @@ pub fn validate_acquisition_artifact(
     }
 
     let fmt = artifact.image_format.to_lowercase();
-    if fmt != "raw" && fmt != "dd" && fmt != "img" && fmt != "bin" && fmt != "iso" && fmt != "image" {
+    if fmt != "raw" && fmt != "dd" && fmt != "img" && fmt != "bin" && fmt != "iso" && fmt != "image"
+    {
         return Err(RecoveryFailureReason::InvalidFormat(format!(
             "Unsupported image format '{}'; raw, dd, img, bin, or iso are accepted",
             artifact.image_format

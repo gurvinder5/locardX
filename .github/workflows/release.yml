@@ -1,0 +1,143 @@
+name: Release & Multi-Platform Builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Draft a GitHub Release with binaries attached'
+        type: boolean
+        default: false
+      tag_name:
+        description: 'Release tag (e.g. v0.1.0)'
+        type: string
+        default: 'v0.1.0'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-tauri:
+    name: Build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: Linux (Ubuntu x86_64)
+            os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            artifact_name: locardx-linux-x86_64
+            bundle_path: src-tauri/target/release/bundle
+          - name: macOS (Apple Silicon arm64)
+            os: macos-latest
+            rust_target: aarch64-apple-darwin
+            artifact_name: locardx-macos-arm64
+            bundle_path: src-tauri/target/release/bundle
+          - name: Windows (x86_64)
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            artifact_name: locardx-windows-x86_64
+            bundle_path: src-tauri/target/release/bundle
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            squashfs-tools
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.rust_target }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          cd frontend && npm install
+
+      - name: Build frontend distribution
+        run: npm run build --prefix frontend
+
+      - name: Build Tauri Desktop application bundle
+        run: npx tauri build
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.artifact_name }}
+          path: |
+            ${{ matrix.platform.bundle_path }}/deb/*.deb
+            ${{ matrix.platform.bundle_path }}/appimage/*.AppImage
+            ${{ matrix.platform.bundle_path }}/dmg/*.dmg
+            ${{ matrix.platform.bundle_path }}/macos/*.app
+            ${{ matrix.platform.bundle_path }}/msi/*.msi
+            ${{ matrix.platform.bundle_path }}/nsis/*.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-tauri]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.create_release == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: List collected release files
+        run: |
+          find release-artifacts -type f
+
+      - name: Determine tag name
+        id: vars
+        run: |
+          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ inputs.tag_name || 'v0.1.0' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: LocardX ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.exe

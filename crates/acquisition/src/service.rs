@@ -2,8 +2,8 @@ use crate::destination::validate_destination;
 use crate::engine::AcquisitionEngine;
 use crate::models::{
     AcquisitionArtifact, AcquisitionDeviceSnapshot, AcquisitionDiagnostics,
-    AcquisitionFailureReason, AcquisitionPlan, AcquisitionProgress,
-    AcquisitionRecordDto, AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
+    AcquisitionFailureReason, AcquisitionPlan, AcquisitionProgress, AcquisitionRecordDto,
+    AcquisitionResult, AcquisitionStatus, ArtifactCleanupStatus,
 };
 use crate::platform::{AcquisitionSourceReader, RealAcquisitionReader};
 use crate::source::{create_source_snapshot, revalidate_source_snapshot};
@@ -20,12 +20,12 @@ use tracing::warn;
 pub const DEFAULT_CHUNK_SIZE_BYTES: usize = 1024 * 1024; // 1 MiB
 
 pub const SUPPORTED_CHUNK_SIZES: &[usize] = &[
-    512 * 1024,        // 512 KiB
-    1024 * 1024,       // 1 MiB
-    4 * 1024 * 1024,   // 4 MiB
-    8 * 1024 * 1024,   // 8 MiB
-    16 * 1024 * 1024,  // 16 MiB
-    32 * 1024 * 1024,  // 32 MiB
+    512 * 1024,       // 512 KiB
+    1024 * 1024,      // 1 MiB
+    4 * 1024 * 1024,  // 4 MiB
+    8 * 1024 * 1024,  // 8 MiB
+    16 * 1024 * 1024, // 16 MiB
+    32 * 1024 * 1024, // 32 MiB
 ];
 
 /// Validates that the requested buffer size is positive, reasonable, and among supported chunk sizes.
@@ -112,7 +112,10 @@ impl AcquisitionService {
 
         let details = format!(
             "Forensic acquisition planned for source {} ({} bytes, chunk buffer {} bytes) -> {}",
-            plan.source.device_id, plan.source.capacity_bytes, plan.chunk_size_bytes, plan.destination_path
+            plan.source.device_id,
+            plan.source.capacity_bytes,
+            plan.chunk_size_bytes,
+            plan.destination_path
         );
 
         let _ = self.audit.log_structured_event(

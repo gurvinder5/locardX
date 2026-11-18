@@ -436,14 +436,12 @@ pub fn get_acquisition_artifact(
 pub async fn verify_acquisition_artifact(
     artifact: AcquisitionArtifact,
 ) -> Result<ArtifactVerificationResponse, SafeErrorResponse> {
-    tokio::task::spawn_blocking(move || {
-        verify_acquisition_artifact_handler(artifact)
-    })
-    .await
-    .map_err(|e| SafeErrorResponse {
-        code: "THREAD_JOIN_ERROR".to_string(),
-        message: format!("Worker thread failure during artifact verification: {}", e),
-    })?
+    tokio::task::spawn_blocking(move || verify_acquisition_artifact_handler(artifact))
+        .await
+        .map_err(|e| SafeErrorResponse {
+            code: "THREAD_JOIN_ERROR".to_string(),
+            message: format!("Worker thread failure during artifact verification: {}", e),
+        })?
 }
 
 pub fn check_acquisition_privileges_handler(

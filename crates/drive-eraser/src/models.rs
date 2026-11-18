@@ -690,9 +690,13 @@ impl PhysicalDeviceSnapshot {
         let bus_matches = match (&self.bus_type, &live.bus_type) {
             (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
             (None, None) => true,
-            (None, Some(live_bus)) if self.is_external_or_removable() && live.is_external_or_removable() => {
-                let matches_media = (self.media_type == DeviceType::Usb && live_bus.eq_ignore_ascii_case("USB"))
-                    || (self.media_type == DeviceType::MemoryCard && (live_bus.contains("SD") || live_bus.contains("MMC")));
+            (None, Some(live_bus))
+                if self.is_external_or_removable() && live.is_external_or_removable() =>
+            {
+                let matches_media = (self.media_type == DeviceType::Usb
+                    && live_bus.eq_ignore_ascii_case("USB"))
+                    || (self.media_type == DeviceType::MemoryCard
+                        && (live_bus.contains("SD") || live_bus.contains("MMC")));
                 if matches_media {
                     discrepancies.push(format!(
                         "Bus type identified on live re-probe: planned None, live Some('{}')",
@@ -724,7 +728,9 @@ impl PhysicalDeviceSnapshot {
         let pss_matches = match (self.physical_sector_size, live.physical_sector_size) {
             (Some(a), Some(b)) => a == b,
             (None, None) => true,
-            (None, Some(live_pss)) if self.is_external_or_removable() && live.is_external_or_removable() => {
+            (None, Some(live_pss))
+                if self.is_external_or_removable() && live.is_external_or_removable() =>
+            {
                 discrepancies.push(format!(
                     "Physical sector size observed on live re-probe: planned None, live Some({})",
                     live_pss
