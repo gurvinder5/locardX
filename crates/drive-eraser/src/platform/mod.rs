@@ -34,6 +34,12 @@ pub mod fallback {
     #[derive(Default)]
     pub struct FallbackHardwareProvider;
 
+    impl FallbackHardwareProvider {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
     impl DriveHardwareProvider for FallbackHardwareProvider {
         fn discover_devices(&self) -> Result<Vec<PhysicalDevice>, LocardError> {
             Ok(Vec::new())
