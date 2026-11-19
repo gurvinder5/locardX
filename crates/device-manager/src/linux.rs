@@ -179,7 +179,7 @@ impl DeviceDiscoveryProvider for LinuxDeviceProvider {
             let capacity_bytes = size_sectors * 512;
 
             // Actual hardware sector size for partition size calculations
-            let hw_sector_size =
+            let _hw_sector_size =
                 Self::read_sysfs_u64(&disk_sys_path.join("queue"), "hw_sector_size").unwrap_or(512);
 
             // Removable flag
