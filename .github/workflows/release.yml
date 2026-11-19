@@ -1,26 +1,113 @@
-name: Release & Multi-Platform Builds
+name: Build, Test & Deploy
 
 on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       create_release:
-        description: 'Draft a GitHub Release with binaries attached'
+        description: 'Publish a GitHub Release with binaries attached'
         type: boolean
-        default: false
+        default: true
       tag_name:
         description: 'Release tag (e.g. v0.1.0)'
         type: string
         default: 'v0.1.0'
-  push:
-    tags:
-      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  build-tauri:
+  test-backend:
+    name: Test Backend (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Cargo check
+        run: cargo check --workspace --all-targets
+
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run unit & integration tests
+        run: cargo test --workspace --verbose
+
+  test-frontend:
+    name: Test Frontend (React & TypeScript)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          if [ -s package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Lint frontend code
+        run: |
+          if npm run | grep -q "lint"; then
+            npm run lint
+          fi
+
+      - name: Typecheck TypeScript
+        run: |
+          if npm run | grep -q "typecheck"; then
+            npm run typecheck
+          fi
+
+      - name: Test frontend build
+        run: |
+          if npm run | grep -q "build"; then
+            npm run build
+          fi
+
+  build-desktop:
     name: Build (${{ matrix.platform.name }})
+    needs: [test-backend, test-frontend]
     runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
@@ -30,11 +117,6 @@ jobs:
             os: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
             artifact_name: locardx-linux-x86_64
-            bundle_path: src-tauri/target/release/bundle
-          - name: macOS (Apple Silicon arm64)
-            os: macos-latest
-            rust_target: aarch64-apple-darwin
-            artifact_name: locardx-macos-arm64
             bundle_path: src-tauri/target/release/bundle
           - name: Windows (x86_64)
             os: windows-latest
@@ -91,17 +173,15 @@ jobs:
           path: |
             ${{ matrix.platform.bundle_path }}/deb/*.deb
             ${{ matrix.platform.bundle_path }}/appimage/*.AppImage
-            ${{ matrix.platform.bundle_path }}/dmg/*.dmg
-            ${{ matrix.platform.bundle_path }}/macos/*.app
             ${{ matrix.platform.bundle_path }}/msi/*.msi
             ${{ matrix.platform.bundle_path }}/nsis/*.exe
           if-no-files-found: warn
           retention-days: 30
 
-  publish-release:
-    name: Publish GitHub Release
-    needs: [build-tauri]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.create_release == true
+  deploy-release:
+    name: Deploy GitHub Release
+    needs: [build-desktop]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -138,6 +218,5 @@ jobs:
           files: |
             release-artifacts/**/*.deb
             release-artifacts/**/*.AppImage
-            release-artifacts/**/*.dmg
             release-artifacts/**/*.msi
             release-artifacts/**/*.exe
