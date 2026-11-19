@@ -8,10 +8,11 @@ This guide provides the three official ways to generate native **Linux** (`.deb`
 
 ## Method 1: Automated GitHub Actions (Recommended & Easiest)
 
-We have configured a multi-platform CI/CD workflow in [`.github/workflows/release.yml`](../../.github/workflows/release.yml) that builds native packages on GitHub's cloud runners for:
+We have configured an automated Build, Test & Deploy CI/CD workflow in [`.github/workflows/release.yml`](../../.github/workflows/release.yml) that automatically runs backend/frontend test suites, builds native packages on GitHub's cloud runners, and deploys releases for:
 - **Linux x86_64**: `.deb` and `.AppImage` (on Ubuntu 22.04)
-- **macOS Apple Silicon (arm64)**: `.dmg` and `.app` (on macOS runner)
 - **Windows x86_64**: `.msi` and `.exe` (on Windows runner)
+
+*(Note: macOS runners have been removed from GitHub Actions to reduce build minutes and runner constraints; macOS bundles can still be built locally using `scripts/build-macos.sh` as documented below in Method 4).*
 
 ### Option A: Trigger On-Demand (No Tag Needed)
 1. Push your code to your GitHub repository:
@@ -20,11 +21,10 @@ We have configured a multi-platform CI/CD workflow in [`.github/workflows/releas
    ```
 2. Navigate to your repository on GitHub.
 3. Click on the **Actions** tab.
-4. Select the **Release & Multi-Platform Builds** workflow in the left sidebar.
+4. Select the **Build, Test & Deploy** workflow in the left sidebar.
 5. Click **Run workflow** -> Select your branch -> Click **Run workflow**.
 6. When the run finishes, scroll down to the **Artifacts** section at the bottom of the run page:
    - `locardx-linux-x86_64.zip` (contains `.deb` and `.AppImage`)
-   - `locardx-macos-arm64.zip` (contains `.dmg` and `.app`)
    - `locardx-windows-x86_64.zip` (contains `.msi` and `.exe`)
    - Click any artifact to download it immediately.
 
